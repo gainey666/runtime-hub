@@ -1,0 +1,27 @@
+{
+  "name": "runtime-hub",
+  "version": "1.0.0",
+  "description": "Desktop hub for monitoring, debugging, and planning code workflows",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "server": "node src/server.js",
+    "python-example": "cd python-agent && python simple_test.py",
+    "install-python": "cd python-agent && pip install -r requirements.txt"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "sqlite3": "^5.1.6",
+    "cors": "^2.8.5",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["runtime", "monitoring", "debugging", "desktop", "workflow"],
+  "author": "",
+  "license": "MIT"
+}
