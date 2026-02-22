@@ -127,92 +127,7 @@ const activeApplications = new Map();
 // Python agent connections
 const pythonAgents = new Map();
 
-// Handle Python agent connections
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-  
-  // Handle Python agent registration
-  socket.on('register_app', (data) => {
-    console.log('Python agent registering:', data);
-    const appId = 'agent_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    pythonAgents.set(socket.id, {
-      id: appId,
-      name: data.name || 'Python Agent',
-      socket: socket,
-      connectedAt: new Date()
-    });
-    
-    socket.emit('registered', { appId: appId });
-    console.log(`Python agent registered: ${data.name} (${appId})`);
-    
-    // Broadcast agent status
-    io.emit('agent_status', {
-      type: 'connected',
-      agentId: appId,
-      agentName: data.name,
-      timestamp: new Date().toISOString()
-    });
-  });
-  
-  // Handle Python agent disconnection
-  socket.on('disconnect', () => {
-    const agent = pythonAgents.get(socket.id);
-    if (agent) {
-      console.log(`Python agent disconnected: ${agent.name} (${agent.id})`);
-      
-      // Broadcast agent status
-      io.emit('agent_status', {
-        type: 'disconnected',
-        agentId: agent.id,
-        agentName: agent.name,
-        timestamp: new Date().toISOString()
-      });
-      
-      pythonAgents.delete(socket.id);
-    }
-  });
-  
-  // Forward Python agent messages to workflow engine
-  socket.on('node_execution_update', (data) => {
-    // Forward to any listening workflow engine
-    io.emit('node_execution_update', data);
-  });
-  
-  socket.on('function_monitoring_data', (data) => {
-    // Forward to any listening workflow engine
-    io.emit('function_monitoring_data', data);
-  });
-});
-
-// Helper function to get available Python agents
-function getAvailablePythonAgents() {
-  return Array.from(pythonAgents.values()).map(agent => ({
-    id: agent.id,
-    name: agent.name,
-    connectedAt: agent.connectedAt
-  }));
-}
-
-// Helper function to execute Python code via agent
-function executePythonCode(nodeId, code, timeout = 30) {
-  const agents = Array.from(pythonAgents.values());
-  if (agents.length === 0) {
-    throw new Error('No Python agents available');
-  }
-  
-  // Use the first available agent
-  const agent = agents[0];
-  agent.socket.emit('execute_python_code', {
-    nodeId: nodeId,
-    code: code,
-    timeout: timeout
-  });
-  
-  return agent.id;
-}
-
-// Socket.IO connection handling for regular applications
+// Single unified Socket.IO connection handler
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
@@ -221,23 +136,48 @@ io.on('connection', (socket) => {
     socket.emit(bufferedLog.event, bufferedLog.data);
   });
 
-  // Emit connection log
   io.emit('log_entry', {
     source: 'Server',
     level: 'info',
     message: `Client connected: ${socket.id}`
   });
 
-  // Register new application
+  // Registration - Python agents send { name, type: 'python' }, regular apps send { name }
   socket.on('register_app', (data) => {
-    const appId = uuidv4();
-    activeApplications.set(socket.id, { appId, ...data });
-    
-    // Save to database
-    db.run('INSERT INTO applications (id, name) VALUES (?, ?)', [appId, data.name]);
-    
-    socket.emit('registered', { appId });
-    console.log(`Application registered: ${data.name} (${appId})`);
+    if (data && data.type === 'python') {
+      // Python agent registration
+      const appId = 'agent_' + uuidv4();
+      pythonAgents.set(socket.id, {
+        id: appId,
+        name: data.name || 'Python Agent',
+        socket: socket,
+        connectedAt: new Date()
+      });
+      socket.emit('registered', { appId });
+      console.log(`Python agent registered: ${data.name} (${appId})`);
+      io.emit('agent_status', {
+        type: 'connected',
+        agentId: appId,
+        agentName: data.name,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // Regular application registration
+      const appId = uuidv4();
+      activeApplications.set(socket.id, { appId, ...data });
+      db.run('INSERT INTO applications (id, name) VALUES (?, ?)', [appId, data.name]);
+      socket.emit('registered', { appId });
+      console.log(`Application registered: ${data.name} (${appId})`);
+    }
+  });
+
+  // Forward Python agent messages to workflow engine
+  socket.on('node_execution_update', (data) => {
+    io.emit('node_execution_update', data);
+  });
+
+  socket.on('function_monitoring_data', (data) => {
+    io.emit('function_monitoring_data', data);
   });
 
   // Receive execution data
@@ -246,27 +186,26 @@ io.on('connection', (socket) => {
     if (!app) return;
 
     const logId = uuidv4();
-    const { 
-      type, 
-      functionName, 
-      timestamp, 
-      duration, 
-      parameters, 
-      returnValue, 
-      error 
+    const {
+      type,
+      functionName,
+      timestamp,
+      duration,
+      parameters,
+      returnValue,
+      error
     } = data;
 
-    db.run(`INSERT INTO execution_logs 
-      (id, app_id, type, function_name, timestamp, duration, parameters, return_value, error)
+    db.run(`INSERT INTO execution_logs
+      (id, app_id, event_type, function_name, start_time, duration, parameters, return_value, error_message)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [logId, app.appId, type, functionName, timestamp, duration, 
+      [logId, app.appId, type, functionName, timestamp, duration,
        JSON.stringify(parameters), JSON.stringify(returnValue), error]
     );
 
-    // Broadcast to dashboard
     io.emit('execution_log', {
       appId: app.appId,
-      logId: logId,
+      logId,
       type,
       functionName,
       timestamp,
@@ -283,23 +222,20 @@ io.on('connection', (socket) => {
     if (!app) return;
 
     const { nodes, connections } = data;
-    
-    // Clear existing node data
+
     db.run('DELETE FROM connections WHERE app_id = ?', [app.appId]);
     db.run('DELETE FROM nodes WHERE app_id = ?', [app.appId]);
 
-    // Save nodes
     nodes.forEach(node => {
-      db.run(`INSERT INTO nodes (id, app_id, type, name, x, y, config)
+      db.run(`INSERT INTO nodes (id, app_id, node_type, node_name, position_x, position_y, config)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [node.id, app.appId, node.type, node.name, node.x, node.y, JSON.stringify(node.config || {})]);
     });
 
-    // Save connections
     connections.forEach(conn => {
-      db.run(`INSERT INTO connections (app_id, source_id, target_id)
-        VALUES (?, ?, ?)`,
-        [app.appId, conn.source, conn.target]);
+      db.run(`INSERT INTO connections (id, app_id, source_node_id, target_node_id)
+        VALUES (?, ?, ?, ?)`,
+        [uuidv4(), app.appId, conn.source, conn.target]);
     });
 
     console.log(`Node graph saved for ${app.name}: ${nodes.length} nodes, ${connections.length} connections`);
@@ -310,29 +246,26 @@ io.on('connection', (socket) => {
     const app = activeApplications.get(socket.id);
     if (!app) return;
 
-    const nodeId = data.nodeId;
-    const { 
-      type, 
-      functionName, 
-      timestamp, 
-      duration, 
-      parameters, 
-      returnValue, 
-      error 
+    const {
+      type,
+      functionName,
+      timestamp,
+      duration,
+      parameters,
+      returnValue,
+      error
     } = data;
 
-    // Save node execution
-    db.run(`INSERT INTO execution_logs 
-      (id, app_id, type, function_name, timestamp, duration, parameters, return_value, error)
+    db.run(`INSERT INTO execution_logs
+      (id, app_id, event_type, function_name, start_time, duration, parameters, return_value, error_message)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nodeId, app.appId, type, functionName, timestamp, duration, 
+      [uuidv4(), app.appId, type, functionName, timestamp, duration,
        JSON.stringify(parameters), JSON.stringify(returnValue), error]
     );
 
-    // Broadcast to dashboard
     io.emit('node_update', {
       appId: app.appId,
-      nodeId,
+      nodeId: data.nodeId,
       type,
       functionName,
       timestamp,
@@ -349,20 +282,17 @@ io.on('connection', (socket) => {
     if (!app) return;
 
     const { nodes, connections } = data;
-    
-    // Clear existing data
+
     db.run('DELETE FROM connections WHERE app_id = ?', [app.appId]);
     db.run('DELETE FROM nodes WHERE app_id = ?', [app.appId]);
 
-    // Save nodes
     nodes.forEach(node => {
-      db.run(`INSERT INTO nodes (id, app_id, type, name, x, y, config)
+      db.run(`INSERT INTO nodes (id, app_id, node_type, node_name, position_x, position_y, config)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [node.id, app.appId, node.type, node.name, node.x, node.y, JSON.stringify(node.config)]
+        [node.id, app.appId, node.type, node.name, node.x, node.y, JSON.stringify(node.config || {})]
       );
     });
 
-    // Save connections
     connections.forEach(conn => {
       db.run(`INSERT INTO connections (id, app_id, source_node_id, target_node_id)
         VALUES (?, ?, ?, ?)`,
@@ -370,7 +300,6 @@ io.on('connection', (socket) => {
       );
     });
 
-    // Broadcast to dashboard
     io.emit('node_update', {
       appId: app.appId,
       nodes,
@@ -379,6 +308,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Clean up Python agent if registered as one
+    const agent = pythonAgents.get(socket.id);
+    if (agent) {
+      console.log(`Python agent disconnected: ${agent.name} (${agent.id})`);
+      io.emit('agent_status', {
+        type: 'disconnected',
+        agentId: agent.id,
+        agentName: agent.name,
+        timestamp: new Date().toISOString()
+      });
+      pythonAgents.delete(socket.id);
+    }
+
+    // Clean up regular app if registered as one
     const app = activeApplications.get(socket.id);
     if (app) {
       console.log(`Application disconnected: ${app.name}`);
@@ -400,7 +343,7 @@ app.get('/api/applications', (req, res) => {
 
 app.get('/api/applications/:appId/logs', (req, res) => {
   const { appId } = req.params;
-  db.all('SELECT * FROM execution_logs WHERE app_id = ? ORDER BY start_time DESC LIMIT 100', 
+  db.all('SELECT * FROM execution_logs WHERE app_id = ? ORDER BY rowid DESC LIMIT 100',
     [appId], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
@@ -447,8 +390,11 @@ app.post('/api/workflows/export-llm', asyncErrorHandler(async (req, res) => {
   const fs = require('fs').promises;
   const { prompt, timestamp, nodeCount, connectionCount } = req.body;
 
+  const logsDir = path.join(__dirname, '..', 'logs');
+  await fs.mkdir(logsDir, { recursive: true });
+
   const filename = `workflow_export_${timestamp}.txt`;
-  const filepath = path.join(__dirname, '..', 'logs', filename);
+  const filepath = path.join(logsDir, filename);
 
   await fs.writeFile(filepath, prompt, 'utf8');
 
@@ -464,8 +410,11 @@ app.post('/api/logs/export', asyncErrorHandler(async (req, res) => {
   const fs = require('fs').promises;
   const { logs, timestamp } = req.body;
 
+  const logsDir = path.join(__dirname, '..', 'logs');
+  await fs.mkdir(logsDir, { recursive: true });
+
   const filename = `system_logs_${timestamp}.json`;
-  const filepath = path.join(__dirname, '..', 'logs', filename);
+  const filepath = path.join(logsDir, filename);
 
   await fs.writeFile(filepath, JSON.stringify(logs, null, 2), 'utf8');
 
@@ -481,8 +430,11 @@ app.post('/api/logs/debug', asyncErrorHandler(async (req, res) => {
   const fs = require('fs').promises;
   const { debugData, timestamp } = req.body;
 
+  const logsDir = path.join(__dirname, '..', 'logs');
+  await fs.mkdir(logsDir, { recursive: true });
+
   const filename = `debug_${timestamp}.json`;
-  const filepath = path.join(__dirname, '..', 'logs', filename);
+  const filepath = path.join(logsDir, filename);
 
   await fs.writeFile(filepath, JSON.stringify(debugData, null, 2), 'utf8');
 
