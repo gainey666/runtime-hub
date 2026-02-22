@@ -262,14 +262,20 @@ function createMenu() {
           label: 'Reload',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => {
-            mainWindow.reload();
+            const focusedWindow = BrowserWindow.getFocusedWindow();
+            if (focusedWindow) {
+              focusedWindow.reload();
+            }
           }
         },
         {
           label: 'Toggle Developer Tools',
           accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
           click: () => {
-            mainWindow.webContents.toggleDevTools();
+            const focusedWindow = BrowserWindow.getFocusedWindow();
+            if (focusedWindow) {
+              focusedWindow.webContents.toggleDevTools();
+            }
           }
         }
       ]
