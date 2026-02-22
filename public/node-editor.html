@@ -1650,11 +1650,19 @@
             }
         });
 
+        // Wire up search input
+        const searchInput = document.getElementById('searchNodes');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                initPalette();
+            });
+        }
+
         // Initialize everything
         console.log('🚀 Initializing node editor...');
         initSocket();
         initCanvasEvents();
-        loadNodePalette();
+        initPalette();
         console.log('✅ Node editor initialized');
     </script>
 </body>
