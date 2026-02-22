@@ -1293,7 +1293,7 @@
                     x: 50,
                     y: 200,
                     inputs: [],
-                    outputs: ['main'],
+                    outputs: [{ name: 'main', type: 'flow' }],
                     config: {}
                 },
                 {
@@ -1302,8 +1302,14 @@
                     category: 'Control Flow',
                     x: 300,
                     y: 200,
-                    inputs: ['input', 'loop_body'],
-                    outputs: ['item', 'loop_complete'],
+                    inputs: [
+                        { name: 'input', type: 'flow', value: '' },
+                        { name: 'loop_body', type: 'flow', value: '' }
+                    ],
+                    outputs: [
+                        { name: 'item', type: 'any' },
+                        { name: 'loop_complete', type: 'flow' }
+                    ],
                     config: {
                         loopType: 'while',
                         maxIterations: 1000
@@ -1315,8 +1321,14 @@
                     category: 'Network',
                     x: 550,
                     y: 150,
-                    inputs: ['url', 'options'],
-                    outputs: ['response', 'error'],
+                    inputs: [
+                        { name: 'url', type: 'string', value: 'http://localhost:3001/api/auto-clicker/status' },
+                        { name: 'options', type: 'object', value: '' }
+                    ],
+                    outputs: [
+                        { name: 'response', type: 'object' },
+                        { name: 'error', type: 'error' }
+                    ],
                     config: {
                         method: 'GET',
                         url: 'http://localhost:3001/api/auto-clicker/status'
@@ -1328,8 +1340,15 @@
                     category: 'Control Flow',
                     x: 800,
                     y: 200,
-                    inputs: ['condition', 'true_path', 'false_path'],
-                    outputs: ['true', 'false'],
+                    inputs: [
+                        { name: 'condition', type: 'boolean', value: '' },
+                        { name: 'true_path', type: 'flow', value: '' },
+                        { name: 'false_path', type: 'flow', value: '' }
+                    ],
+                    outputs: [
+                        { name: 'true', type: 'flow' },
+                        { name: 'false', type: 'flow' }
+                    ],
                     config: {
                         operator: 'equals',
                         comparisonValue: 'running'
@@ -1341,8 +1360,8 @@
                     category: 'Control Flow',
                     x: 1050,
                     y: 250,
-                    inputs: ['duration'],
-                    outputs: ['done'],
+                    inputs: [{ name: 'duration', type: 'number', value: '500' }],
+                    outputs: [{ name: 'done', type: 'flow' }],
                     config: {
                         duration: 500
                     }
@@ -1353,7 +1372,7 @@
                     category: 'Control Flow',
                     x: 1300,
                     y: 200,
-                    inputs: ['main'],
+                    inputs: [{ name: 'main', type: 'flow', value: '' }],
                     outputs: [],
                     config: {}
                 }
