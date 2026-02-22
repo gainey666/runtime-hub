@@ -1,29 +1,50 @@
 const express = require('express');
 const http = require('http');
-const socketIo = require('socket.io');
-const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const socketIo = require('socket.io');
+const sqlite3 = require('sqlite3').verbose();
+const WorkflowEngine = require('./workflow-engine-wrapper');
+const cors = require('cors');
+const { v4: uuidv4 } = require('uuid');
+
+// Import configuration and error handling
+const { getConfig, isDevelopment } = require('./config');
+const { 
+  handleError, 
+  asyncErrorHandler, 
+  ValidationError, 
+  WorkflowError,
+  validateRequired,
+  validateObject,
+  validateArray,
+  generateRequestId
+} = require('./utils/errorHandler');
+
+// Get validated configuration
+const config = getConfig();
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: config.server.cors
 });
 
-const PORT = process.env.PORT || 3000;
+// Initialize workflow engine with config
+const workflowEngine = new WorkflowEngine(io, config);
 
 // Middleware
-app.use(cors());
+app.use(cors(config.server.cors));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Database setup
-const db = new sqlite3.Database('./runtime_monitor.db');
+// Request ID middleware
+app.use((req, res, next) => {
+  req.id = generateRequestId();
+  next();
+});
+
+// Database setup with config
+const db = new sqlite3.Database(config.database.path);
 
 // Initialize database tables
 db.serialize(() => {
@@ -72,9 +93,97 @@ db.serialize(() => {
 // Store active connections
 const activeApplications = new Map();
 
-// Socket.IO connection handling
+// Python agent connections
+const pythonAgents = new Map();
+
+// Handle Python agent connections
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  
+  // Handle Python agent registration
+  socket.on('register_app', (data) => {
+    console.log('Python agent registering:', data);
+    const appId = 'agent_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    pythonAgents.set(socket.id, {
+      id: appId,
+      name: data.name || 'Python Agent',
+      socket: socket,
+      connectedAt: new Date()
+    });
+    
+    socket.emit('registered', { appId: appId });
+    console.log(`Python agent registered: ${data.name} (${appId})`);
+    
+    // Broadcast agent status
+    io.emit('agent_status', {
+      type: 'connected',
+      agentId: appId,
+      agentName: data.name,
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Handle Python agent disconnection
+  socket.on('disconnect', () => {
+    const agent = pythonAgents.get(socket.id);
+    if (agent) {
+      console.log(`Python agent disconnected: ${agent.name} (${agent.id})`);
+      
+      // Broadcast agent status
+      io.emit('agent_status', {
+        type: 'disconnected',
+        agentId: agent.id,
+        agentName: agent.name,
+        timestamp: new Date().toISOString()
+      });
+      
+      pythonAgents.delete(socket.id);
+    }
+  });
+  
+  // Forward Python agent messages to workflow engine
+  socket.on('node_execution_update', (data) => {
+    // Forward to any listening workflow engine
+    io.emit('node_execution_update', data);
+  });
+  
+  socket.on('function_monitoring_data', (data) => {
+    // Forward to any listening workflow engine
+    io.emit('function_monitoring_data', data);
+  });
+});
+
+// Helper function to get available Python agents
+function getAvailablePythonAgents() {
+  return Array.from(pythonAgents.values()).map(agent => ({
+    id: agent.id,
+    name: agent.name,
+    connectedAt: agent.connectedAt
+  }));
+}
+
+// Helper function to execute Python code via agent
+function executePythonCode(nodeId, code, timeout = 30) {
+  const agents = Array.from(pythonAgents.values());
+  if (agents.length === 0) {
+    throw new Error('No Python agents available');
+  }
+  
+  // Use the first available agent
+  const agent = agents[0];
+  agent.socket.emit('execute_python_code', {
+    nodeId: nodeId,
+    code: code,
+    timeout: timeout
+  });
+  
+  return agent.id;
+}
+
+// Socket.IO connection handling for regular applications
+io.on('connection', (socket) => {
+  console.log('Application client connected:', socket.id);
 
   // Register new application
   socket.on('register_app', (data) => {
@@ -99,64 +208,112 @@ io.on('connection', (socket) => {
       functionName, 
       timestamp, 
       duration, 
-      success, 
       parameters, 
       returnValue, 
-      error, 
-      stackTrace,
-      callId 
+      error 
     } = data;
 
-    // Save to database
     db.run(`INSERT INTO execution_logs 
-      (id, app_id, function_name, start_time, end_time, duration, success, parameters, error_message, return_value, call_id, event_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        logId, 
-        app.appId, 
-        functionName, 
-        type === 'call_enter' ? timestamp : null,
-        type === 'call_exit' ? timestamp : null,
-        duration || null,
-        success !== undefined ? success : null,
-        JSON.stringify(parameters || {}),
-        error || null,
-        JSON.stringify(returnValue || {}),
-        callId || null,
-        type
-      ]
+      (id, app_id, type, function_name, timestamp, duration, parameters, return_value, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [logId, app.appId, type, functionName, timestamp, duration, 
+       JSON.stringify(parameters), JSON.stringify(returnValue), error]
     );
 
     // Broadcast to dashboard
-    io.emit('execution_update', {
+    io.emit('execution_log', {
       appId: app.appId,
-      appName: app.name,
-      functionName,
-      duration,
-      success,
-      timestamp,
+      logId: logId,
       type,
+      functionName,
+      timestamp,
+      duration,
       parameters,
       returnValue,
-      error,
-      callId
+      error
     });
   });
 
-  // Receive node data
+  // Receive node graph data
   socket.on('node_data', (data) => {
     const app = activeApplications.get(socket.id);
     if (!app) return;
 
     const { nodes, connections } = data;
-
-    // Clear existing nodes/connections for this app
-    db.run('DELETE FROM nodes WHERE app_id = ?', [app.appId]);
+    
+    // Clear existing node data
     db.run('DELETE FROM connections WHERE app_id = ?', [app.appId]);
+    db.run('DELETE FROM nodes WHERE app_id = ?', [app.appId]);
 
-    // Save new nodes
+    // Save nodes
     nodes.forEach(node => {
-      db.run(`INSERT INTO nodes (id, app_id, node_type, node_name, position_x, position_y, config)
+      db.run(`INSERT INTO nodes (id, app_id, type, name, x, y, config)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [node.id, app.appId, node.type, node.name, node.x, node.y, JSON.stringify(node.config || {})]);
+    });
+
+    // Save connections
+    connections.forEach(conn => {
+      db.run(`INSERT INTO connections (app_id, source_id, target_id)
+        VALUES (?, ?, ?)`,
+        [app.appId, conn.source, conn.target]);
+    });
+
+    console.log(`Node graph saved for ${app.name}: ${nodes.length} nodes, ${connections.length} connections`);
+  });
+
+  // Receive node updates
+  socket.on('node_update', (data) => {
+    const app = activeApplications.get(socket.id);
+    if (!app) return;
+
+    const nodeId = data.nodeId;
+    const { 
+      type, 
+      functionName, 
+      timestamp, 
+      duration, 
+      parameters, 
+      returnValue, 
+      error 
+    } = data;
+
+    // Save node execution
+    db.run(`INSERT INTO execution_logs 
+      (id, app_id, type, function_name, timestamp, duration, parameters, return_value, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nodeId, app.appId, type, functionName, timestamp, duration, 
+       JSON.stringify(parameters), JSON.stringify(returnValue), error]
+    );
+
+    // Broadcast to dashboard
+    io.emit('node_update', {
+      appId: app.appId,
+      nodeId,
+      type,
+      functionName,
+      timestamp,
+      duration,
+      parameters,
+      returnValue,
+      error
+    });
+  });
+
+  // Handle workflow definition
+  socket.on('define_workflow', (data) => {
+    const app = activeApplications.get(socket.id);
+    if (!app) return;
+
+    const { nodes, connections } = data;
+    
+    // Clear existing data
+    db.run('DELETE FROM connections WHERE app_id = ?', [app.appId]);
+    db.run('DELETE FROM nodes WHERE app_id = ?', [app.appId]);
+
+    // Save nodes
+    nodes.forEach(node => {
+      db.run(`INSERT INTO nodes (id, app_id, type, name, x, y, config)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [node.id, app.appId, node.type, node.name, node.x, node.y, JSON.stringify(node.config)]
       );
@@ -240,7 +397,248 @@ app.get('/node-editor', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'node-editor.html'));
 });
 
-server.listen(PORT, () => {
-  console.log(`Visual Runtime Monitor server running on port ${PORT}`);
-  console.log(`Dashboard available at http://localhost:${PORT}`);
+// ==================== WORKFLOW EXECUTION API ====================
+
+// Execute workflow
+app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
+  // Validate request body
+  validateRequired(req.body, 'request body');
+  validateObject(req.body, 'request body', ['nodes', 'connections']);
+  
+  const { nodes, connections } = req.body;
+  
+  // Validate nodes
+  validateArray(nodes, 'nodes', 1, config.nodeEditor.maxNodes);
+  
+  // Validate connections
+  validateArray(connections, 'connections', 0, config.nodeEditor.maxConnections);
+  
+  // Validate node structure
+  nodes.forEach((node, index) => {
+    validateObject(node, `node[${index}]`, ['id', 'type', 'x', 'y']);
+    validateRequired(node.id, `node[${index}].id`);
+    validateRequired(node.type, `node[${index}].type`);
+    validateType(node.x, 'number', `node[${index}].x`);
+    validateType(node.y, 'number', `node[${index}].y`);
+  });
+  
+  // Validate connection structure
+  connections.forEach((connection, index) => {
+    validateObject(connection, `connection[${index}]`, ['id', 'from', 'to']);
+    validateRequired(connection.id, `connection[${index}].id`);
+    validateObject(connection.from, `connection[${index}].from`, ['nodeId', 'portIndex']);
+    validateObject(connection.to, `connection[${index}].to`, ['nodeId', 'portIndex']);
+  });
+  
+  const workflowId = `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`🚀 Starting workflow execution: ${workflowId}`);
+  
+  // Execute workflow in background with timeout
+  workflowEngine.executeWorkflow(workflowId, nodes, connections)
+    .then(result => {
+      console.log(`✅ Workflow completed: ${workflowId}`);
+    })
+    .catch(error => {
+      console.error(`❌ Workflow failed: ${workflowId} - ${error.message}`);
+    });
+  
+  res.json({ 
+    success: true, 
+    workflowId: workflowId,
+    message: 'Workflow execution started'
+  });
+}));
+
+// Stop workflow
+app.post('/api/workflows/:workflowId/stop', (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const success = workflowEngine.stopWorkflow(workflowId);
+    
+    res.json({ 
+      success: success,
+      workflowId: workflowId,
+      message: success ? 'Workflow stopped' : 'Workflow not found'
+    });
+    
+  } catch (error) {
+    console.error('Failed to stop workflow:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get workflow status
+app.get('/api/workflows/:workflowId/status', (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const workflow = workflowEngine.runningWorkflows.get(workflowId);
+    
+    if (workflow) {
+      res.json({
+        success: true,
+        workflow: {
+          id: workflow.id,
+          status: workflow.status,
+          startTime: workflow.startTime,
+          endTime: workflow.endTime,
+          duration: workflow.duration,
+          executionState: Object.fromEntries(workflow.executionState),
+          error: workflow.error
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'Workflow not found or completed'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Failed to get workflow status:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get all running workflows
+app.get('/api/workflows', (req, res) => {
+  try {
+    const workflows = Array.from(workflowEngine.runningWorkflows.values()).map(workflow => ({
+      id: workflow.id,
+      status: workflow.status,
+      startTime: workflow.startTime,
+      endTime: workflow.endTime,
+      duration: workflow.duration,
+      nodeCount: workflow.nodes.length,
+      completedNodes: Array.from(workflow.executionState.values()).filter(state => state.status === 'completed').length
+    }));
+    
+    res.json({
+      success: true,
+      workflows: workflows
+    });
+    
+  } catch (error) {
+    console.error('Failed to get workflows:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/health', asyncErrorHandler(async (req, res) => {
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    version: process.env.npm_package_version || '1.0.0',
+    environment: config.isDevelopment ? 'development' : config.isProduction ? 'production' : 'test',
+    services: {
+      database: 'connected',
+      workflowEngine: workflowEngine.runningWorkflows.size < config.workflow.maxConcurrentWorkflows ? 'healthy' : 'overloaded',
+      pythonAgents: 'unknown' // Will be updated when pythonAgents is defined
+    },
+    metrics: {
+      runningWorkflows: workflowEngine.runningWorkflows.size,
+      maxConcurrentWorkflows: config.workflow.maxConcurrentWorkflows
+    }
+  };
+  
+  res.json(health);
+}));
+
+// Global error handler
+app.use(handleError);
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🔄 SIGTERM received, shutting down gracefully');
+  
+  server.close(() => {
+    console.log('🔌 HTTP server closed');
+    
+    db.close((err) => {
+      if (err) {
+        console.error('❌ Database close error:', err);
+        process.exit(1);
+      } else {
+        console.log('✅ Database closed');
+        process.exit(0);
+      }
+    });
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🔄 SIGINT received, shutting down gracefully');
+  
+  server.close(() => {
+    console.log('🔌 HTTP server closed');
+    
+    db.close((err) => {
+      if (err) {
+        console.error('❌ Database close error:', err);
+        process.exit(1);
+      } else {
+        console.log('✅ Database closed');
+        process.exit(0);
+      }
+    });
+  });
+});
+
+// Setup workflow event listeners for dashboard
+workflowEngine.on('workflowStarted', (workflowId) => {
+  io.emit('execution_update', {
+    type: 'workflow_started',
+    workflowId: workflowId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+workflowEngine.on('workflowCompleted', (workflowId) => {
+  io.emit('execution_update', {
+    type: 'workflow_completed',
+    workflowId: workflowId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+workflowEngine.on('nodeStarted', (data) => {
+  io.emit('node_update', {
+    type: 'node_started',
+    nodeId: data.nodeId,
+    workflowId: data.workflowId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+workflowEngine.on('nodeCompleted', (data) => {
+  io.emit('node_update', {
+    type: 'node_completed',
+    nodeId: data.nodeId,
+    workflowId: data.workflowId,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Start server
+server.listen(config.server.port, config.server.host, () => {
+  console.log(`🚀 Runtime Logger server running on ${config.server.host}:${config.server.port}`);
+  console.log(`📊 Environment: ${config.isDevelopment ? 'Development' : config.isProduction ? 'Production' : 'Test'}`);
+  console.log(`🔗 Node Editor: http://${config.server.host}:${config.server.port}/node-editor`);
+  console.log(`📈 Dashboard: http://${config.server.host}:${config.server.port}/`);
+  
+  if (config.isDevelopment) {
+    console.log(`🐛 Debug logging enabled`);
+  }
 });

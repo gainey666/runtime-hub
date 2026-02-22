@@ -1,0 +1,61 @@
+graph TB
+    subgraph "Main Project (windsurf-project-13)"
+        MS[Main Server :3000]
+        NE[Node Editor UI]
+        VM[Visual Monitor]
+        ACE[Auto-Clicker Engine .js]
+        WC[Windows Capture .js]
+        OE[OCR Engine .js]
+        MC[Mouse Control .js]
+    end
+    
+    subgraph "Auto-Clicker Tool (auto-clicker-tool)"
+        API[API Server :3001]
+        SAC[Simple Auto-Clicker]
+    end
+    
+    subgraph "UI Components (TypeScript/React)"
+        NEC[NodeEditor Components]
+        WC[Workflow Components]
+        ED[Error Display]
+        RP[Real-time Panel]
+    end
+    
+    %% Core Auto-Clicker Workflow (FIXED)
+    ACE --> WC
+    WC --> OE
+    OE --> ACE
+    ACE --> MC
+    
+    %% Cross-Project Communication (FIXED)
+    MS -->|HTTP| API
+    API -->|require| ACE
+    MS -->|Socket.IO| VM
+    ACE -->|Events| VM
+    
+    %% UI Integration
+    MS -->|HTTP| NE
+    NE -->|WebSocket| MS
+    VM -->|Socket.IO| NEC
+    NEC -->|React| WC
+    WC -->|React| ED
+    ED -->|React| RP
+    
+    %% Module Exports (FIXED)
+    ACE -.->|module.exports| API
+    WC -.->|module.exports| ACE
+    OE -.->|module.exports| ACE
+    MC -.->|module.exports| ACE
+    
+    %% Import Paths (FIXED)
+    API -.->|../../../windsurf-project-13/src/core/auto-clicker/auto-clicker-engine| ACE
+    
+    classDef mainProject fill:#e1f5fe
+    classDef autoClickerTool fill:#f3e5f5
+    classDef uiComponents fill:#e8f5e8
+    classDef workflow fill:#fff3e0
+    classDef fixed fill:#c8e6c9
+    
+    class ACE,WC,OE,MC fixed
+    class API,MS mainProject
+    class NEC,WC,ED,RP uiComponents
