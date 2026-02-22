@@ -1291,68 +1291,56 @@
             }
         }
 
-        function saveWorkflow() {
+        async function saveWorkflow() {
             const workflowData = {
-                name: 'My Workflow',  // TODO: Use IPC dialog for proper name input
+                name: 'My Workflow',
                 nodes: nodes,
                 connections: connections,
                 timestamp: new Date().toISOString(),
                 version: '1.0'
             };
 
-            const blob = new Blob([JSON.stringify(workflowData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `workflow_${workflowData.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-
-            console.log('Workflow saved:', workflowData.name);
+            try {
+                const result = await window.electron.saveWorkflow(workflowData);
+                if (!result.canceled) {
+                    showNotification('Save Workflow', `Saved to: ${result.filePath}`, 'success');
+                    console.log('Workflow saved:', result.filePath);
+                }
+            } catch (error) {
+                showNotification('Save Error', 'Failed to save workflow: ' + error.message, 'error');
+                console.error('Save error:', error);
+            }
         }
 
-        function loadWorkflow() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
+        async function loadWorkflow() {
+            try {
+                const result = await window.electron.loadWorkflow();
+                if (result.canceled) return;
 
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+                const workflowData = result.data;
 
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const workflowData = JSON.parse(event.target.result);
+                // Save current state for undo
+                saveState();
 
-                        // Save current state for undo
-                        saveState();
+                // Load workflow data
+                nodes = workflowData.nodes || [];
+                connections = workflowData.connections || [];
 
-                        // Load workflow data
-                        nodes = workflowData.nodes || [];
-                        connections = workflowData.connections || [];
+                // Update counters
+                nodeIdCounter = Math.max(...nodes.map(n => parseInt(n.id.split('_')[1]) || 0), 0) + 1;
+                connectionIdCounter = Math.max(...connections.map(c => parseInt(c.id.split('_')[1]) || 0), 0) + 1;
 
-                        // Update counters
-                        nodeIdCounter = Math.max(...nodes.map(n => parseInt(n.id.split('_')[1]) || 0), 0) + 1;
-                        connectionIdCounter = Math.max(...connections.map(c => parseInt(c.id.split('_')[1]) || 0), 0) + 1;
+                // Re-render workflow
+                renderWorkflow();
+                updateStats();
 
-                        // Re-render workflow
-                        renderWorkflow();
-                        updateStats();
+                showNotification('Load Workflow', `Loaded: ${workflowData.name || 'Untitled'}`, 'success');
+                console.log('Workflow loaded:', workflowData.name);
 
-                        showNotification('Load Workflow', `Loaded: ${workflowData.name || 'Untitled'}`, 'success');
-                        console.log('Workflow loaded:', workflowData);
-
-                    } catch (error) {
-                        showNotification('Load Error', 'Failed to load workflow: ' + error.message, 'error');
-                        console.error('Load error:', error);
-                    }
-                };
-
-                reader.readAsText(file);
-            };
-
-            input.click();
+            } catch (error) {
+                showNotification('Load Error', 'Failed to load workflow: ' + error.message, 'error');
+                console.error('Load error:', error);
+            }
         }
 
         function clearCanvas() {

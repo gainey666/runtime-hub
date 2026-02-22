@@ -9,8 +9,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 // ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
   // File dialog APIs
-  showSaveDialog: () => ipcRenderer.invoke('show-save-dialog'),
-  showOpenDialog: () => ipcRenderer.invoke('show-open-dialog'),
+  saveWorkflow: (data) => ipcRenderer.invoke('save-workflow', data),
+  loadWorkflow: () => ipcRenderer.invoke('load-workflow'),
 
   // App version
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

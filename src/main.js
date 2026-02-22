@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow;
@@ -308,28 +309,24 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
 
-ipcMain.handle('show-save-dialog', async () => {
-  const { dialog } = require('electron');
+ipcMain.handle('save-workflow', async (event, workflowData) => {
   const result = await dialog.showSaveDialog(mainWindow, {
-    filters: [
-      { name: 'JSON Files', extensions: ['json'] },
-      { name: 'All Files', extensions: ['*'] }
-    ],
-    defaultPath: 'workflow.json'
+    filters: [{ name: 'JSON Files', extensions: ['json'] }],
+    defaultPath: `workflow_${Date.now()}.json`
   });
-  return result;
+  if (result.canceled) return { canceled: true };
+  fs.writeFileSync(result.filePath, JSON.stringify(workflowData, null, 2), 'utf8');
+  return { canceled: false, filePath: result.filePath };
 });
 
-ipcMain.handle('show-open-dialog', async () => {
-  const { dialog } = require('electron');
+ipcMain.handle('load-workflow', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    filters: [
-      { name: 'JSON Files', extensions: ['json'] },
-      { name: 'All Files', extensions: ['*'] }
-    ],
+    filters: [{ name: 'JSON Files', extensions: ['json'] }],
     properties: ['openFile']
   });
-  return result;
+  if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+  const content = fs.readFileSync(result.filePaths[0], 'utf8');
+  return { canceled: false, data: JSON.parse(content) };
 });
 
 console.log('Runtime Hub starting...');
