@@ -9,12 +9,13 @@ const { v4: uuidv4 } = require('uuid');
 
 // Import configuration and error handling
 const { getConfig, isDevelopment } = require('./config');
-const { 
-  handleError, 
-  asyncErrorHandler, 
-  ValidationError, 
+const {
+  handleError,
+  asyncErrorHandler,
+  ValidationError,
   WorkflowError,
   validateRequired,
+  validateType,
   validateObject,
   validateArray,
   generateRequestId
