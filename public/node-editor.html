@@ -992,13 +992,21 @@
         function startConnection(nodeId, portType, portIndex, x, y) {
             isConnecting = true;
             connectionStart = { nodeId, portType, portIndex, x, y };
-            
+
             const svg = document.getElementById('connectionLayer');
             tempConnection = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             tempConnection.classList.add('connection');
+            tempConnection.style.stroke = '#10b981';
+            tempConnection.style.strokeWidth = '2';
+            tempConnection.style.fill = 'none';
             svg.appendChild(tempConnection);
-            
+
+            document.addEventListener('mousemove', updateTempConnectionHandler);
             document.addEventListener('mouseup', handleConnectionEnd);
+        }
+
+        function updateTempConnectionHandler(e) {
+            updateTempConnection(e.clientX, e.clientY);
         }
 
         function updateTempConnection(x, y) {
@@ -1040,6 +1048,7 @@
             }
             isConnecting = false;
             connectionStart = null;
+            document.removeEventListener('mousemove', updateTempConnectionHandler);
             document.removeEventListener('mouseup', handleConnectionEnd);
         }
 
