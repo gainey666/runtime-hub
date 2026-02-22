@@ -61,17 +61,27 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Target X</label>
-                    <input type="number" id="targetX" value="500"
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+            <div class="mb-4">
+                <label class="block text-sm text-gray-400 mb-2">Screen Region (X, Y, Width, Height)</label>
+                <div class="grid grid-cols-4 gap-2">
+                    <input type="number" id="regionX" value="0" placeholder="X"
+                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                    <input type="number" id="regionY" value="0" placeholder="Y"
+                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                    <input type="number" id="regionWidth" value="800" placeholder="Width"
+                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                    <input type="number" id="regionHeight" value="600" placeholder="Height"
+                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
                 </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-2">Target Y</label>
-                    <input type="number" id="targetY" value="500"
-                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
-                </div>
+                <button onclick="selectRegion()" class="mt-2 w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg">
+                    <i class="fas fa-crop mr-2"></i>Select Region Visually
+                </button>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-gray-400 mb-2">Search Text (OCR)</label>
+                <input type="text" id="searchText" value="" placeholder="Text to find on screen"
+                    class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
             </div>
 
             <div class="flex gap-4">
@@ -114,8 +124,57 @@
         </div>
     </div>
 
+    <!-- Region Selector Overlay -->
+    <div id="regionSelector" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:9999; cursor:crosshair;">
+        <div id="selectionBox" style="position:absolute; border:2px dashed #10b981; background:rgba(16,185,129,0.2);"></div>
+    </div>
+
     <script>
         let statusInterval;
+        let selecting = false;
+        let startX, startY;
+
+        // Region selector
+        function selectRegion() {
+            const overlay = document.getElementById('regionSelector');
+            overlay.style.display = 'block';
+
+            overlay.onmousedown = (e) => {
+                selecting = true;
+                startX = e.clientX;
+                startY = e.clientY;
+            };
+
+            overlay.onmousemove = (e) => {
+                if (!selecting) return;
+                const box = document.getElementById('selectionBox');
+                const width = Math.abs(e.clientX - startX);
+                const height = Math.abs(e.clientY - startY);
+                const left = Math.min(e.clientX, startX);
+                const top = Math.min(e.clientY, startY);
+
+                box.style.left = left + 'px';
+                box.style.top = top + 'px';
+                box.style.width = width + 'px';
+                box.style.height = height + 'px';
+            };
+
+            overlay.onmouseup = (e) => {
+                if (!selecting) return;
+                const width = Math.abs(e.clientX - startX);
+                const height = Math.abs(e.clientY - startY);
+                const x = Math.min(e.clientX, startX);
+                const y = Math.min(e.clientY, startY);
+
+                document.getElementById('regionX').value = x;
+                document.getElementById('regionY').value = y;
+                document.getElementById('regionWidth').value = width;
+                document.getElementById('regionHeight').value = height;
+
+                overlay.style.display = 'none';
+                selecting = false;
+            };
+        }
 
         // Fetch current status
         async function updateStatus() {
