@@ -1650,6 +1650,84 @@
             }
         });
 
+        // Initialize canvas events for drag-drop
+        function initCanvasEvents() {
+            const canvas = document.getElementById('canvas');
+            const nodeLayer = document.getElementById('nodeLayer');
+
+            if (!canvas || !nodeLayer) {
+                console.error('❌ Canvas elements not found');
+                return;
+            }
+
+            // Handle drag over canvas
+            canvas.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+            });
+
+            // Handle drop on canvas
+            canvas.addEventListener('drop', (e) => {
+                e.preventDefault();
+
+                try {
+                    const nodeTypeData = e.dataTransfer.getData('nodeType');
+                    if (!nodeTypeData) return;
+
+                    const nodeType = JSON.parse(nodeTypeData);
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+
+                    // Create node from palette
+                    const node = {
+                        id: `node_${nodeIdCounter++}`,
+                        type: nodeType.name,
+                        category: nodeType.category,
+                        x: x,
+                        y: y,
+                        inputs: nodeType.inputs.map(input => ({
+                            name: typeof input === 'string' ? input : input.name,
+                            type: typeof input === 'string' ? 'any' : (input.type || 'any'),
+                            value: ''
+                        })),
+                        outputs: nodeType.outputs.map(output => ({
+                            name: typeof output === 'string' ? output : output.name,
+                            type: typeof output === 'string' ? 'any' : (output.type || 'any')
+                        })),
+                        config: { ...nodeType.config }
+                    };
+
+                    nodes.push(node);
+                    renderNode(node);
+                    updateStats();
+                    saveState();
+
+                    console.log('✅ Node added from palette:', node.type);
+
+                } catch (error) {
+                    console.error('Failed to add node:', error);
+                }
+            });
+
+            // Deselect nodes on canvas click
+            canvas.addEventListener('click', (e) => {
+                if (e.target === canvas || e.target === nodeLayer) {
+                    deselectAllNodes();
+                }
+            });
+
+            console.log('✅ Canvas events initialized');
+        }
+
+        // Deselect all nodes
+        function deselectAllNodes() {
+            selectedNode = null;
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('selected');
+            });
+        }
+
         // Wire up search input
         const searchInput = document.getElementById('searchNodes');
         if (searchInput) {
