@@ -5,6 +5,41 @@
 
 const { EventEmitter } = require('events');
 
+// Ports that establish execution order only — they don't carry data to downstream inputs.
+// If a connection's SOURCE output port is in this set, resolveInputs skips it.
+const CONTROL_FLOW_OUTPUT_PORTS = new Set(['main', 'item', 'loop_complete', 'completed', 'shown', 'logged', 'sent']);
+
+// Port definitions: maps node type → { inputs: [names], outputs: [names] }
+// portIndex 0 = first name in each array. Matches node-library.js definitions.
+const NODE_PORT_MAP = {
+    'Start':            { inputs: [],                                       outputs: ['main'] },
+    'End':              { inputs: ['main'],                                  outputs: [] },
+    'Condition':        { inputs: ['condition', 'true_path', 'false_path'],  outputs: ['true', 'false'] },
+    'Loop':             { inputs: ['input', 'loop_body'],                    outputs: ['item', 'loop_complete'] },
+    'Delay':            { inputs: ['duration'],                              outputs: ['completed'] },
+    'Wait':             { inputs: ['duration'],                              outputs: ['completed'] },
+    'Execute Python':   { inputs: ['code', 'args'],                          outputs: ['result', 'error'] },
+    'Monitor Function': { inputs: ['function_name', 'trigger'],              outputs: ['execution_data', 'error'] },
+    'Import Module':    { inputs: ['module_name'],                           outputs: ['module', 'error'] },
+    'List Directory':   { inputs: ['directory_path'],                        outputs: ['files', 'directories', 'error'] },
+    'Start Process':    { inputs: ['executable', 'args'],                    outputs: ['process_id', 'error'] },
+    'Kill Process':     { inputs: ['process_id', 'force'],                   outputs: ['success', 'error'] },
+    'HTTP Request':     { inputs: ['url', 'method', 'body'],                 outputs: ['response', 'status_code', 'error'] },
+    'Download File':    { inputs: ['url', 'save_path'],                      outputs: ['file_path', 'size', 'error'] },
+    'Transform JSON':   { inputs: ['data', 'transformation'],                outputs: ['result', 'error'] },
+    'Parse Text':       { inputs: ['text', 'pattern'],                       outputs: ['matches', 'error'] },
+    'SQL Query':        { inputs: ['query', 'parameters'],                   outputs: ['results', 'error'] },
+    'Show Message':     { inputs: ['title', 'message'],                      outputs: ['shown', 'error'] },
+    'Write Log':        { inputs: ['level', 'message'],                      outputs: ['logged', 'error'] },
+    'Keyboard Input':   { inputs: ['keys', 'target'],                        outputs: ['sent', 'error'] },
+    'Encrypt Data':     { inputs: ['data', 'key'],                           outputs: ['encrypted', 'error'] },
+    'Screenshot':       { inputs: ['trigger'],                               outputs: ['image', 'error'] },
+    'HTML Snapshot':    { inputs: ['url'],                                   outputs: ['html', 'error'] },
+    'CSS Inject':       { inputs: ['trigger'],                               outputs: ['result', 'error'] },
+    'Image Resize':     { inputs: ['imagePath'],                             outputs: ['outputPath', 'error'] },
+    'Color Picker':     { inputs: ['imagePath'],                             outputs: ['colors', 'error'] },
+};
+
 class WorkflowEngine extends EventEmitter {
     constructor(io, config = {}) {
         super();
@@ -126,6 +161,15 @@ class WorkflowEngine extends EventEmitter {
                 cancelled: false
             };
 
+            // Create execution context for data flow between nodes
+            const assetsDir = await this.createRunWorkspace(workflowId);
+            workflow.context = {
+                runId: workflowId,
+                variables: {},
+                values: {},      // context.values[nodeId] = executor result after each node runs
+                assetsDir        // workspace dir for this run's temp files
+            };
+
             this.runningWorkflows.set(workflowId, workflow);
 
             // Execute workflow with timeout
@@ -202,9 +246,17 @@ class WorkflowEngine extends EventEmitter {
                 throw new Error(`No executor found for node type: ${nodeType}`);
             }
 
-            // Execute node
-            const result = await executor(node, workflow, connections);
-            
+            // Resolve wired inputs from upstream node outputs
+            const inputs = this.resolveInputs(node, workflow, connections);
+
+            // Execute node (inputs passed as 4th arg; existing executors ignore it safely)
+            const result = await executor(node, workflow, connections, inputs);
+
+            // Store result in context so downstream nodes can read it
+            if (workflow.context) {
+                workflow.context.values[nodeId] = result;
+            }
+
             // Update node state
             nodeState.status = 'completed';
             nodeState.endTime = Date.now();
@@ -220,11 +272,13 @@ class WorkflowEngine extends EventEmitter {
                 data: { nodeId, result, duration: nodeState.duration }
             });
 
-            // Broadcast node update
+            // Broadcast node update — include outputs so the editor can show them
             this.broadcastNodeUpdate(workflow.id, nodeId, 'completed', result);
-            
-            // Execute connected nodes
-            await this.executeConnectedNodes(workflow, node, connections);
+
+            // Execute connected nodes (skipped if executor handled traversal itself, e.g. Loop)
+            if (!result || !result._skipAutoTraverse) {
+                await this.executeConnectedNodes(workflow, node, connections, result);
+            }
             
         } catch (error) {
             nodeState.status = 'error';
@@ -247,21 +301,91 @@ class WorkflowEngine extends EventEmitter {
     }
 
     /**
-     * Execute connected nodes
+     * Execute connected nodes — serial, with optional port-based branching.
+     * @param {object} result - the upstream node's result (may contain _nextPort)
      */
-    async executeConnectedNodes(workflow, node, connections) {
-        const connectedConnections = connections.filter(conn => 
-            conn.from.nodeId === node.id
-        );
-        
-        const connectedNodes = connectedConnections.map(conn => {
-            const targetNode = workflow.nodes.find(n => n.id === conn.to.nodeId);
-            return targetNode;
-        }).filter(Boolean);
-        
-        await Promise.all(connectedNodes.map(connectedNode => 
-            this.executeNode(workflow, connectedNode, connections)
-        ));
+    async executeConnectedNodes(workflow, node, connections, result) {
+        const portMap = NODE_PORT_MAP[node.type];
+
+        // If the executor specifies which output port to follow (e.g. Condition), filter to that port only
+        const nextPort = result && result._nextPort !== undefined ? result._nextPort : null;
+
+        const outgoingConns = connections.filter(conn => {
+            if (conn.from.nodeId !== node.id) return false;
+            if (nextPort !== null && portMap) {
+                const outputPortName = portMap.outputs[conn.from.portIndex];
+                return outputPortName === nextPort;
+            }
+            return true;
+        });
+
+        const connectedNodes = outgoingConns
+            .map(conn => workflow.nodes.find(n => n.id === conn.to.nodeId))
+            .filter(Boolean);
+
+        // Serial execution — one at a time in connection order
+        for (const connectedNode of connectedNodes) {
+            await this.executeNode(workflow, connectedNode, connections);
+        }
+    }
+
+    /**
+     * Resolve named inputs for a node by looking up upstream nodes' outputs in context.
+     * Returns a plain object keyed by input port name.
+     * Falls back to the entire upstream result if the specific output port key isn't found.
+     */
+    resolveInputs(node, workflow, connections) {
+        const inputs = {};
+        if (!workflow.context) return inputs;
+
+        const incomingConns = connections.filter(c => c.to.nodeId === node.id);
+        if (incomingConns.length === 0) return inputs;
+
+        const portMap = NODE_PORT_MAP[node.type];
+
+        for (const conn of incomingConns) {
+            const upstreamResult = workflow.context.values[conn.from.nodeId];
+            if (upstreamResult === undefined) continue;
+
+            // Input port name on this node
+            const inputPortName = portMap
+                ? (portMap.inputs[conn.to.portIndex] || `input_${conn.to.portIndex}`)
+                : `input_${conn.to.portIndex}`;
+
+            // Output port name on the source node
+            const fromNode = workflow.nodes.find(n => n.id === conn.from.nodeId);
+            const fromPortMap = fromNode ? NODE_PORT_MAP[fromNode.type] : null;
+            const outputPortName = fromPortMap
+                ? (fromPortMap.outputs[conn.from.portIndex] || null)
+                : null;
+
+            // Skip control-flow-only ports — they order execution but don't carry data
+            if (outputPortName && CONTROL_FLOW_OUTPUT_PORTS.has(outputPortName)) continue;
+
+            // Use named port value if it exists, otherwise pass the whole result
+            let value;
+            if (outputPortName && upstreamResult[outputPortName] !== undefined) {
+                value = upstreamResult[outputPortName];
+            } else {
+                value = upstreamResult;
+            }
+
+            inputs[inputPortName] = value;
+        }
+
+        return inputs;
+    }
+
+    /**
+     * Create a workspace directory for this run's temp files.
+     * Path: <cwd>/runs/<runId>/
+     */
+    async createRunWorkspace(runId) {
+        const path = require('path');
+        const fs = require('fs').promises;
+        const dir = path.join(process.cwd(), 'runs', runId);
+        await fs.mkdir(dir, { recursive: true });
+        return dir;
     }
 
     /**
@@ -380,12 +504,13 @@ class WorkflowEngine extends EventEmitter {
         }
     }
 
-    async executePython(node, workflow, connections) {
+    async executePython(node, workflow, connections, inputs = {}) {
         const { spawn } = require('child_process');
         const fs = require('fs').promises;
         const os = require('os');
         const path = require('path');
-        const code = (node.config && node.config.code) || '';
+        // Prefer wired code input, fall back to static config
+        const code = inputs.code !== undefined ? String(inputs.code) : ((node.config && node.config.code) || '');
 
         if (!code.trim()) return { success: false, error: 'No Python code provided' };
 
@@ -409,7 +534,9 @@ class WorkflowEngine extends EventEmitter {
                     success: code === 0,
                     exitCode: code,
                     output: stdout.trim(),
-                    stderr: stderr.trim()
+                    stderr: stderr.trim(),
+                    // Port-named alias for downstream wiring
+                    result: stdout.trim()
                 });
             });
 
@@ -468,7 +595,8 @@ class WorkflowEngine extends EventEmitter {
                 result = false;
         }
         
-        return { result, branch: result ? 'true' : 'false' };
+        // _nextPort tells executeConnectedNodes which output to follow
+        return { result, branch: result ? 'true' : 'false', _nextPort: result ? 'true' : 'false' };
     }
 
     /**
@@ -496,9 +624,11 @@ class WorkflowEngine extends EventEmitter {
     /**
      * Show Message Node
      */
-    async executeShowMessage(node, workflow, connections) {
-        const title = node.config.title || 'Notification';
-        const message = node.config.message || '';
+    async executeShowMessage(node, workflow, connections, inputs = {}) {
+        const config = node.config || {};
+        const title = inputs.title !== undefined ? String(inputs.title) : (config.title || 'Notification');
+        const rawMessage = inputs.message !== undefined ? inputs.message : (config.message || '');
+        const message = typeof rawMessage === 'object' ? JSON.stringify(rawMessage, null, 2) : String(rawMessage);
         
         console.log(`💬 Showing message: ${title} - ${message}`);
         
@@ -522,12 +652,14 @@ class WorkflowEngine extends EventEmitter {
     /**
      * Write Log Node - writes to file AND broadcasts to log window
      */
-    async executeWriteLog(node, workflow, connections) {
+    async executeWriteLog(node, workflow, connections, inputs = {}) {
         const fs = require('fs').promises;
         const path = require('path');
         const config = node.config || {};
-        const message = config.message || '';
-        const level = config.level || 'info';
+        // Prefer wired inputs; if message is an object, stringify it for readability
+        const rawMessage = inputs.message !== undefined ? inputs.message : (config.message || '');
+        const message = typeof rawMessage === 'object' ? JSON.stringify(rawMessage, null, 2) : String(rawMessage);
+        const level = inputs.level !== undefined ? String(inputs.level) : (config.level || 'info');
         const logFile = config.logFile || path.join(process.cwd(), 'logs', 'workflow.log');
 
         const timestamp = new Date().toISOString();
@@ -550,7 +682,7 @@ class WorkflowEngine extends EventEmitter {
             });
         }
 
-        return { success: true, level, message, logFile, timestamp };
+        return { success: true, level, message, logFile, timestamp, logged: true };
     }
 
     /**
@@ -663,7 +795,8 @@ class WorkflowEngine extends EventEmitter {
             }
         }
 
-        return { success: true, iterations, completed: results.length, results };
+        // _skipAutoTraverse: loop manages its own traversal above
+        return { success: true, iterations, completed: results.length, results, _skipAutoTraverse: true };
     }
 
     /**
@@ -891,13 +1024,14 @@ class WorkflowEngine extends EventEmitter {
     /**
      * HTTP Request Node - REAL HTTP REQUESTS
      */
-    async executeHTTPRequest(node, workflow, connections) {
+    async executeHTTPRequest(node, workflow, connections, inputs = {}) {
         const config = node.config || {};
-        const url = config.url || '';
-        const method = config.method || 'GET';
+        // Prefer wired inputs, fall back to static config
+        const url = inputs.url !== undefined ? String(inputs.url) : (config.url || '');
+        const method = inputs.method !== undefined ? String(inputs.method) : (config.method || 'GET');
         const headers = config.headers || {};
-        const body = config.body || null;
-        
+        const body = inputs.body !== undefined ? inputs.body : (config.body || null);
+
         console.log(`🌐 Making real HTTP ${method} request to: ${url}`);
         
         try {
@@ -919,7 +1053,10 @@ class WorkflowEngine extends EventEmitter {
                 headers: Object.fromEntries(response.headers.entries()),
                 data: data,
                 url: url,
-                method: method
+                method: method,
+                // Port-named aliases for downstream wiring
+                response: data,
+                status_code: response.status
             };
         } catch (error) {
             console.error('HTTP Request failed:', error.message);
@@ -928,7 +1065,9 @@ class WorkflowEngine extends EventEmitter {
                 statusText: 'Request Failed',
                 error: error.message,
                 url: url,
-                method: method
+                method: method,
+                response: null,
+                status_code: 0
             };
         }
     }
@@ -964,13 +1103,15 @@ class WorkflowEngine extends EventEmitter {
     /**
      * Transform JSON Node - real operations: pick, filter, map, merge, get, set, keys, values
      */
-    async executeTransformJSON(node, workflow, connections) {
+    async executeTransformJSON(node, workflow, connections, inputs = {}) {
         const config = node.config || {};
         const operation = config.operation || 'get';
         let input;
 
+        // Prefer wired input data, fall back to static config
+        const rawInput = inputs.data !== undefined ? inputs.data : config.input;
         try {
-            input = typeof config.input === 'string' ? JSON.parse(config.input) : (config.input || {});
+            input = typeof rawInput === 'string' ? JSON.parse(rawInput) : (rawInput || {});
         } catch {
             return { success: false, error: 'Invalid JSON input' };
         }
@@ -1052,11 +1193,12 @@ class WorkflowEngine extends EventEmitter {
     /**
      * Parse Text Node - real regex match, split, replace, extract
      */
-    async executeParseText(node, workflow, connections) {
+    async executeParseText(node, workflow, connections, inputs = {}) {
         const config = node.config || {};
-        const text = config.text || '';
+        const rawText = inputs.text !== undefined ? inputs.text : (config.text || '');
+        const text = typeof rawText === 'object' ? JSON.stringify(rawText) : String(rawText);
         const operation = config.operation || 'match';
-        const pattern = config.pattern || '';
+        const pattern = inputs.pattern !== undefined ? String(inputs.pattern) : (config.pattern || '');
         const flags = config.flags || 'g';
 
         console.log(`🔍 Parse Text: operation=${operation}, pattern="${pattern}"`);
@@ -1104,9 +1246,9 @@ class WorkflowEngine extends EventEmitter {
                 default:
                     result = text;
             }
-            return { success: true, operation, result, inputLength: text.length };
+            return { success: true, operation, result, inputLength: text.length, matches: result };
         } catch (error) {
-            return { success: false, operation, error: error.message };
+            return { success: false, operation, error: error.message, matches: null };
         }
     }
 
