@@ -37,8 +37,13 @@ class AutoClickerEngine extends EventEmitter {
             session.status = 'running';
             this.runningSessions.add(sessionId);
             this.emit('status_update', { sessionId, status: 'running' });
-            // Start the main loop
-            await this.runMainLoop(sessionId);
+            // Start the main loop (don't await - let it run in background)
+            this.runMainLoop(sessionId).catch(error => {
+                console.error(`❌ Main loop error for session ${sessionId}:`, error);
+                session.status = 'error';
+                session.error = error instanceof Error ? error.message : 'Unknown error';
+                this.emit('error', { sessionId, error: session.error });
+            });
             return sessionId;
         }
         catch (error) {

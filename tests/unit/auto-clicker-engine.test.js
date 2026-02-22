@@ -12,9 +12,18 @@ describe('AutoClickerEngine', () => {
     engine = new AutoClickerEngine();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clean up any active sessions
     if (engine) {
+      // Stop all running sessions
+      const sessionIds = Array.from(engine.sessions.keys());
+      for (const sessionId of sessionIds) {
+        try {
+          await engine.stop(sessionId);
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+      }
       engine.sessions.clear();
       engine.runningSessions.clear();
     }
@@ -188,7 +197,8 @@ describe('AutoClickerEngine', () => {
         area: { x: -1, y: 0, width: 800, height: 600 },
         ocr: { engine: 'simple', language: ['eng'], confidence: 0.7 },
         click: { button: 'left', clickType: 'single' },
-        refreshRate: 500
+        refreshRate: 100,
+        maxIterations: 1
       };
 
       let errorEventReceived = false;
@@ -200,11 +210,11 @@ describe('AutoClickerEngine', () => {
       try {
         await engine.start(invalidConfig);
       } catch (error) {
-        // Expected to throw
+        // Expected to throw during validation
       }
-      
+
       // Note: Error event emission may need to be implemented
       // This test ensures error handling structure is in place
-    });
+    }, 5000);
   });
 });
