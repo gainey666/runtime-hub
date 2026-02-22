@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, desktopCapturer, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -6,6 +6,8 @@ const { spawn } = require('child_process');
 let mainWindow;
 let logsWindow;
 let autoClickerWindow;
+let regionSelectorWindow;
+let regionRequesterWindow;   // which window triggered the selector
 let serverProcess;
 
 // Create the browser window
@@ -258,6 +260,13 @@ function createMenu() {
             createAutoClickerWindow();
           }
         },
+        {
+          label: 'Select Screen Region',
+          accelerator: 'CmdOrCtrl+G',
+          click: async () => {
+            await createRegionSelectorWindow(mainWindow);
+          }
+        },
         { type: 'separator' },
         {
           label: 'Reload',
@@ -285,6 +294,71 @@ function createMenu() {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+}
+
+async function createRegionSelectorWindow(requesterWindow) {
+  if (regionSelectorWindow) {
+    regionSelectorWindow.focus();
+    return;
+  }
+
+  regionRequesterWindow = requesterWindow;
+
+  const display = screen.getPrimaryDisplay();
+  const { width, height } = display.size;
+  const sf = display.scaleFactor || 1;
+
+  // Capture desktop BEFORE showing the overlay window (so window isn't in screenshot)
+  let screenshotDataUrl = null;
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: {
+        width:  Math.round(width * sf),
+        height: Math.round(height * sf)
+      }
+    });
+    if (sources.length > 0) {
+      screenshotDataUrl = sources[0].thumbnail.toDataURL();
+    }
+  } catch (err) {
+    console.error('desktopCapturer failed:', err);
+  }
+
+  regionSelectorWindow = new BrowserWindow({
+    width,
+    height,
+    x: display.bounds.x,
+    y: display.bounds.y,
+    fullscreen: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    backgroundColor: '#000000'
+  });
+
+  regionSelectorWindow.loadFile(path.join(__dirname, '../public/region-selector.html'));
+
+  regionSelectorWindow.webContents.once('did-finish-load', () => {
+    if (screenshotDataUrl) {
+      regionSelectorWindow.webContents.send('screenshot-data', screenshotDataUrl);
+    }
+    regionSelectorWindow.show();
+    regionSelectorWindow.focus();
+  });
+
+  regionSelectorWindow.on('closed', () => {
+    regionSelectorWindow = null;
+    regionRequesterWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
@@ -327,6 +401,28 @@ ipcMain.handle('load-workflow', async () => {
   if (result.canceled || result.filePaths.length === 0) return { canceled: true };
   const content = fs.readFileSync(result.filePaths[0], 'utf8');
   return { canceled: false, data: JSON.parse(content) };
+});
+
+// ── Region Selector IPC ───────────────────────────────────────────────────────
+
+ipcMain.handle('open-region-selector', async (event) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  await createRegionSelectorWindow(sender);
+});
+
+ipcMain.handle('region-selected', (_event, region) => {
+  if (regionRequesterWindow && !regionRequesterWindow.isDestroyed()) {
+    regionRequesterWindow.webContents.send('region-selected', region);
+  }
+  if (regionSelectorWindow && !regionSelectorWindow.isDestroyed()) {
+    regionSelectorWindow.close();
+  }
+});
+
+ipcMain.handle('cancel-region-selector', () => {
+  if (regionSelectorWindow && !regionSelectorWindow.isDestroyed()) {
+    regionSelectorWindow.close();
+  }
 });
 
 console.log('Runtime Hub starting...');

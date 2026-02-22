@@ -33,7 +33,14 @@ contextBridge.exposeInMainWorld('electron', {
   onMenuAbout: (callback) => ipcRenderer.on('menu-about', callback),
 
   // Remove all listeners for a specific channel
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+
+  // Region selector
+  openRegionSelector:   ()       => ipcRenderer.invoke('open-region-selector'),
+  submitRegion:         (region) => ipcRenderer.invoke('region-selected', region),
+  cancelRegionSelector: ()       => ipcRenderer.invoke('cancel-region-selector'),
+  onScreenshotData:     (cb)     => ipcRenderer.on('screenshot-data',  (_e, data)   => cb(data)),
+  onRegionSelected:     (cb)     => ipcRenderer.on('region-selected',   (_e, region) => cb(region))
 });
 
 console.log('Preload script loaded successfully');

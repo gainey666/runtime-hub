@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Select Region</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      cursor: crosshair;
+      user-select: none;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas {
+      display: block;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #hud {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.82);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-family: 'Consolas', monospace;
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid rgba(255,255,255,0.12);
+      white-space: nowrap;
+    }
+
+    #tip {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.82);
+      color: #a3e635;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      font-size: 13px;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid rgba(163, 230, 53, 0.25);
+    }
+
+    #loading {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 18px;
+      z-index: 200;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="loading">Loading desktop screenshot...</div>
+  <div id="tip" style="display:none">Drag to select a region &nbsp;|&nbsp; Esc to cancel</div>
+  <div id="hud">X: 0, Y: 0</div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const hudEl = document.getElementById('hud');
+    const tipEl = document.getElementById('tip');
+    const loadingEl = document.getElementById('loading');
+
+    let screenshot = null;   // HTMLImageElement
+    let scaleX = 1;
+    let scaleY = 1;
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let selX = 0, selY = 0, selW = 0, selH = 0;
+
+    // ── Receive desktop screenshot from main process ─────────────────────────
+    window.electron.onScreenshotData((dataUrl) => {
+      const img = new Image();
+      img.onload = () => {
+        screenshot = img;
+
+        // Fit canvas to full window, but store image at native res
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+
+        // Scale = image pixels / CSS pixels
+        scaleX = img.naturalWidth  / window.innerWidth;
+        scaleY = img.naturalHeight / window.innerHeight;
+
+        draw();
+        loadingEl.style.display = 'none';
+        tipEl.style.display = 'block';
+      };
+      img.src = dataUrl;
+    });
+
+    // ── Draw everything on canvas ────────────────────────────────────────────
+    function draw() {
+      if (!screenshot) return;
+
+      const iW = canvas.width;
+      const iH = canvas.height;
+
+      // 1. Draw screenshot
+      ctx.drawImage(screenshot, 0, 0);
+
+      // 2. Dark overlay over everything
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+      ctx.fillRect(0, 0, iW, iH);
+
+      if (isDragging && selW > 4 && selH > 4) {
+        // 3. Restore original image inside selection (bright "cut-out")
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(selX, selY, selW, selH);
+        ctx.clip();
+        ctx.drawImage(screenshot, 0, 0);
+        ctx.restore();
+
+        // 4. Selection border
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth   = Math.round(2 * scaleX);
+        ctx.setLineDash([Math.round(6 * scaleX), Math.round(3 * scaleX)]);
+        ctx.strokeRect(selX, selY, selW, selH);
+        ctx.setLineDash([]);
+
+        // 5. Corner handles
+        const hs = Math.round(8 * scaleX);
+        ctx.fillStyle = '#10b981';
+        [[selX, selY],[selX+selW, selY],[selX, selY+selH],[selX+selW, selY+selH]].forEach(([cx, cy]) => {
+          ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs);
+        });
+      }
+    }
+
+    // ── Mouse events ─────────────────────────────────────────────────────────
+    document.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX * scaleX;
+      startY = e.clientY * scaleY;
+      selX = startX; selY = startY; selW = 0; selH = 0;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      const cx = e.clientX * scaleX;
+      const cy = e.clientY * scaleY;
+
+      if (isDragging) {
+        selX = Math.min(cx, startX);
+        selY = Math.min(cy, startY);
+        selW = Math.abs(cx - startX);
+        selH = Math.abs(cy - startY);
+        draw();
+        hudEl.textContent = `X: ${Math.round(selX)}, Y: ${Math.round(selY)}  |  ${Math.round(selW)} × ${Math.round(selH)} px`;
+      } else {
+        hudEl.textContent = `X: ${Math.round(cx)}, Y: ${Math.round(cy)}`;
+      }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+
+      const region = {
+        x:      Math.round(selX),
+        y:      Math.round(selY),
+        width:  Math.round(selW),
+        height: Math.round(selH)
+      };
+
+      if (region.width < 5 || region.height < 5) {
+        // Accidental click — just reset
+        draw();
+        return;
+      }
+
+      window.electron.submitRegion(region);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        window.electron.cancelRegionSelector();
+      }
+    });
+  </script>
+</body>
+</html>
