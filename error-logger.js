@@ -259,7 +259,9 @@ class ErrorLogger {
 
 // Export for Node.js (CommonJS)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ErrorLogger;
+    module.exports = { ErrorLogger };
+    module.exports.ErrorLogger = ErrorLogger;
+    module.exports.default = ErrorLogger;
 }
 
 // Initialize error logger in browser
