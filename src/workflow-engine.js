@@ -381,9 +381,48 @@ class WorkflowEngine extends EventEmitter {
     }
 
     async executePython(node, workflow, connections) {
+        const { spawn } = require('child_process');
+        const fs = require('fs').promises;
+        const os = require('os');
+        const path = require('path');
         const code = (node.config && node.config.code) || '';
-        console.log(`🐍 Executing Python code`);
-        return { output: 'Simulated Python execution' };
+
+        if (!code.trim()) return { success: false, error: 'No Python code provided' };
+
+        console.log(`🐍 Executing Python code (${code.length} chars)`);
+
+        // Write code to a temp file so it can be executed cleanly
+        const tmpFile = path.join(os.tmpdir(), `wf_python_${Date.now()}.py`);
+        await fs.writeFile(tmpFile, code, 'utf8');
+
+        return new Promise((resolve) => {
+            const python = spawn('python', [tmpFile], { shell: true });
+            let stdout = '';
+            let stderr = '';
+
+            python.stdout.on('data', d => { stdout += d.toString(); });
+            python.stderr.on('data', d => { stderr += d.toString(); });
+
+            python.on('close', async (code) => {
+                await fs.unlink(tmpFile).catch(() => {});
+                resolve({
+                    success: code === 0,
+                    exitCode: code,
+                    output: stdout.trim(),
+                    stderr: stderr.trim()
+                });
+            });
+
+            python.on('error', async (err) => {
+                await fs.unlink(tmpFile).catch(() => {});
+                resolve({ success: false, error: err.message });
+            });
+
+            setTimeout(() => {
+                python.kill();
+                resolve({ success: false, error: 'Python execution timed out after 30s' });
+            }, 30000);
+        });
     }
 
     /**
@@ -481,21 +520,37 @@ class WorkflowEngine extends EventEmitter {
     }
 
     /**
-     * Write Log Node
+     * Write Log Node - writes to file AND broadcasts to log window
      */
     async executeWriteLog(node, workflow, connections) {
-        const message = node.config.message || '';
-        const level = node.config.level || 'info';
-        const logFile = node.config.logFile || 'workflow.log';
-        
-        console.log(`📝 Writing log: [${level}] ${message}`);
-        
-        return {
-            level: level,
-            message: message,
-            logFile: logFile,
-            logged: true
-        };
+        const fs = require('fs').promises;
+        const path = require('path');
+        const config = node.config || {};
+        const message = config.message || '';
+        const level = config.level || 'info';
+        const logFile = config.logFile || path.join(process.cwd(), 'logs', 'workflow.log');
+
+        const timestamp = new Date().toISOString();
+        const line = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+
+        console.log(`📝 Write Log: [${level}] ${message}`);
+
+        // Ensure log directory exists
+        await fs.mkdir(path.dirname(logFile), { recursive: true }).catch(() => {});
+        // Append to log file
+        await fs.appendFile(logFile, line, 'utf8');
+
+        // Also broadcast to the logs window via socket
+        if (this.io && this.io.emit) {
+            this.io.emit('log_entry', {
+                source: 'WriteLog',
+                level: level,
+                message: message,
+                data: { workflowId: workflow.id, logFile }
+            });
+        }
+
+        return { success: true, level, message, logFile, timestamp };
     }
 
     /**
@@ -506,81 +561,174 @@ class WorkflowEngine extends EventEmitter {
     }
 
     /**
-     * Keyboard Input Node
+     * Keyboard Input Node - uses PowerShell SendKeys on Windows
      */
     async executeKeyboardInput(node, workflow, connections) {
-        const keys = node.config.keys || '';
-        const action = node.config.action || '';
-        
-        console.log(`⌨️ Simulating keyboard input: ${keys} (${action})`);
-        
-        return { 
-            keys: 'simulated keys',
-            sent: true
-        };
+        const { spawn } = require('child_process');
+        const config = node.config || {};
+        const keys = config.keys || '';
+        const delayMs = parseInt(config.delay) || 500;
+
+        if (!keys) return { success: false, error: 'No keys specified' };
+
+        console.log(`⌨️ Keyboard input: "${keys}" (delay: ${delayMs}ms)`);
+
+        return new Promise((resolve) => {
+            // Use PowerShell's SendKeys for Windows keyboard simulation
+            const psScript = `
+                Start-Sleep -Milliseconds ${delayMs}
+                Add-Type -AssemblyName System.Windows.Forms
+                [System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')
+                Write-Output 'Keys sent: ${keys.replace(/'/g, "''")}'
+            `;
+            const ps = spawn('powershell', ['-NoProfile', '-Command', psScript], { shell: false });
+            let stdout = '';
+            let stderr = '';
+            ps.stdout.on('data', d => { stdout += d.toString(); });
+            ps.stderr.on('data', d => { stderr += d.toString(); });
+            ps.on('close', (code) => {
+                resolve({ success: code === 0, keys, stdout: stdout.trim(), stderr: stderr.trim() });
+            });
+            ps.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+        });
     }
 
     /**
-     * Encrypt Data Node
+     * Encrypt Data Node - real AES-256-GCM using Node crypto
      */
     async executeEncryptData(node, workflow, connections) {
-        const data = node.config.data || '';
-        const algorithm = node.config.algorithm || 'AES-256';
-        
+        const crypto = require('crypto');
+        const config = node.config || {};
+        const data = config.data || '';
+        const key = config.key || '';
+        const algorithm = 'aes-256-gcm';
+
+        if (!data) return { success: false, error: 'No data to encrypt' };
+
         console.log(`🔐 Encrypting data with ${algorithm}`);
-        
-        return { 
-            encrypted: 'simulated encrypted data',
-            algorithm: algorithm
-        };
+
+        try {
+            // Derive a 32-byte key from whatever the user provides
+            const keyBuffer = crypto.createHash('sha256').update(key || 'default-workflow-key').digest();
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv(algorithm, keyBuffer, iv);
+
+            let encrypted = cipher.update(data, 'utf8', 'hex');
+            encrypted += cipher.final('hex');
+            const authTag = cipher.getAuthTag().toString('hex');
+
+            return {
+                success: true,
+                algorithm,
+                encrypted,
+                iv: iv.toString('hex'),
+                authTag,
+                // Combined payload for easy storage: iv:authTag:encrypted
+                payload: `${iv.toString('hex')}:${authTag}:${encrypted}`
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
     }
 
     /**
-     * Loop Node
+     * Loop Node - executes connected nodes N times in sequence
      */
     async executeLoop(node, workflow, connections) {
-        const iterations = node.config.iterations || 1;
-        
+        const config = node.config || {};
+        const iterations = Math.max(1, parseInt(config.iterations) || 1);
+        const delayBetween = parseInt(config.delayBetween) || 0;
+
         console.log(`🔄 Looping ${iterations} times`);
-        
-        return { 
-            iterations: iterations,
-            message: 'Loop execution simulated'
-        };
+
+        const results = [];
+        for (let i = 0; i < iterations; i++) {
+            if (workflow.cancelled) break;
+            console.log(`🔄 Loop iteration ${i + 1}/${iterations}`);
+
+            // Execute connected nodes for this iteration
+            const connectedConnections = connections.filter(c => c.from.nodeId === node.id);
+            for (const conn of connectedConnections) {
+                const targetNode = workflow.nodes.find(n => n.id === conn.to.nodeId);
+                if (targetNode) {
+                    const result = await this.executeNode(workflow, targetNode, connections);
+                    results.push({ iteration: i + 1, nodeId: targetNode.id, result });
+                }
+            }
+
+            if (delayBetween > 0 && i < iterations - 1) {
+                await new Promise(resolve => setTimeout(resolve, delayBetween));
+            }
+        }
+
+        return { success: true, iterations, completed: results.length, results };
     }
 
     /**
-     * Monitor Function Node
+     * Monitor Function Node - polls a URL or command and reports result
      */
     async executeMonitorFunction(node, workflow, connections) {
-        const functionName = node.config.functionName || '';
-        const interval = node.config.interval || 1000;
-        
-        console.log(`👁️ Monitoring function: ${functionName} (interval: ${interval}ms)`);
-        
-        return { 
-            functionName: functionName,
-            interval: interval,
-            message: 'Function monitoring simulated'
-        };
+        const config = node.config || {};
+        const target = config.target || '';
+        const interval = parseInt(config.interval) || 1000;
+        const checks = parseInt(config.checks) || 3;
+
+        console.log(`👁️ Monitoring: "${target}" — ${checks} checks every ${interval}ms`);
+
+        const results = [];
+        for (let i = 0; i < checks; i++) {
+            if (workflow.cancelled) break;
+            let checkResult;
+
+            if (target.startsWith('http://') || target.startsWith('https://')) {
+                try {
+                    const start = Date.now();
+                    const res = await fetch(target, { method: 'HEAD' });
+                    checkResult = { check: i + 1, status: res.status, latencyMs: Date.now() - start, ok: res.ok };
+                } catch (err) {
+                    checkResult = { check: i + 1, error: err.message, ok: false };
+                }
+            } else {
+                // Treat as a process name — check if it's running via tasklist
+                const { execSync } = require('child_process');
+                try {
+                    execSync(`tasklist /FI "IMAGENAME eq ${target}" /NH`, { stdio: 'pipe' });
+                    checkResult = { check: i + 1, process: target, running: true };
+                } catch {
+                    checkResult = { check: i + 1, process: target, running: false };
+                }
+            }
+
+            results.push(checkResult);
+            if (i < checks - 1) await new Promise(r => setTimeout(r, interval));
+        }
+
+        return { success: true, target, checks: results };
     }
 
     /**
-     * Import Module Node
+     * Import Module Node - dynamically require a Node module or file
      */
     async executeImportModule(node, workflow, connections) {
-        const moduleName = node.config.module || '';
-        const modulePath = node.config.path || '';
-        
-        console.log(`📦 Importing module: ${moduleName} from ${modulePath}`);
-        
-        // Simulated module import
-        return {
-            module: moduleName,
-            path: modulePath,
-            loaded: true,
-            exports: ['default', 'function1', 'function2']
-        };
+        const path = require('path');
+        const config = node.config || {};
+        const moduleName = config.module || '';
+        const modulePath = config.path || '';
+
+        if (!moduleName && !modulePath) return { success: false, error: 'No module or path specified' };
+
+        const toLoad = modulePath ? path.resolve(modulePath) : moduleName;
+        console.log(`📦 Importing module: ${toLoad}`);
+
+        try {
+            const mod = require(toLoad);
+            const exports = Object.keys(mod);
+            return { success: true, module: toLoad, exports, type: typeof mod };
+        } catch (error) {
+            return { success: false, module: toLoad, error: error.message };
+        }
     }
 
     /**
@@ -786,31 +934,215 @@ class WorkflowEngine extends EventEmitter {
     }
 
     /**
-     * Download File Node
+     * Download File Node - real HTTP download to disk
      */
     async executeDownloadFile(node, workflow, connections) {
-        return { filePath: '/path/to/downloaded/file', size: 1024 };
+        const fs = require('fs');
+        const path = require('path');
+        const config = node.config || {};
+        const url = config.url || '';
+        const dest = config.destination || path.join(process.cwd(), 'downloads', `file_${Date.now()}`);
+
+        if (!url) return { success: false, error: 'No URL provided' };
+
+        console.log(`⬇️ Downloading: ${url} → ${dest}`);
+
+        try {
+            await require('fs').promises.mkdir(path.dirname(dest), { recursive: true });
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+            const buffer = Buffer.from(await response.arrayBuffer());
+            await require('fs').promises.writeFile(dest, buffer);
+
+            return { success: true, url, destination: dest, size: buffer.length };
+        } catch (error) {
+            return { success: false, url, error: error.message };
+        }
     }
 
     /**
-     * Transform JSON Node
+     * Transform JSON Node - real operations: pick, filter, map, merge, get, set, keys, values
      */
     async executeTransformJSON(node, workflow, connections) {
-        return { transformed: 'Simulated transformation' };
+        const config = node.config || {};
+        const operation = config.operation || 'get';
+        let input;
+
+        try {
+            input = typeof config.input === 'string' ? JSON.parse(config.input) : (config.input || {});
+        } catch {
+            return { success: false, error: 'Invalid JSON input' };
+        }
+
+        console.log(`🔧 Transform JSON: operation=${operation}`);
+
+        try {
+            let result;
+            switch (operation) {
+                case 'get': {
+                    // Get a nested key using dot notation: "user.name"
+                    const keyPath = (config.key || '').split('.');
+                    result = keyPath.reduce((obj, k) => obj && obj[k] !== undefined ? obj[k] : undefined, input);
+                    break;
+                }
+                case 'set': {
+                    // Set a key: key="user.age", value="30"
+                    result = JSON.parse(JSON.stringify(input));
+                    const keys = (config.key || '').split('.');
+                    let obj = result;
+                    for (let i = 0; i < keys.length - 1; i++) {
+                        if (!obj[keys[i]]) obj[keys[i]] = {};
+                        obj = obj[keys[i]];
+                    }
+                    obj[keys[keys.length - 1]] = config.value;
+                    break;
+                }
+                case 'pick': {
+                    // Pick specific keys: keys="id,name,email"
+                    const picks = (config.keys || '').split(',').map(k => k.trim());
+                    result = picks.reduce((acc, k) => { if (input[k] !== undefined) acc[k] = input[k]; return acc; }, {});
+                    break;
+                }
+                case 'omit': {
+                    const omits = new Set((config.keys || '').split(',').map(k => k.trim()));
+                    result = Object.fromEntries(Object.entries(input).filter(([k]) => !omits.has(k)));
+                    break;
+                }
+                case 'filter': {
+                    // Filter array by key=value
+                    if (!Array.isArray(input)) throw new Error('Input must be an array for filter');
+                    const [filterKey, filterVal] = (config.filter || '=').split('=').map(s => s.trim());
+                    result = input.filter(item => String(item[filterKey]) === filterVal);
+                    break;
+                }
+                case 'map': {
+                    // Map array to a specific key: key="name"
+                    if (!Array.isArray(input)) throw new Error('Input must be an array for map');
+                    result = input.map(item => item[config.key] !== undefined ? item[config.key] : item);
+                    break;
+                }
+                case 'merge': {
+                    let extra;
+                    try { extra = JSON.parse(config.merge || '{}'); } catch { extra = {}; }
+                    result = { ...input, ...extra };
+                    break;
+                }
+                case 'keys':
+                    result = Object.keys(input);
+                    break;
+                case 'values':
+                    result = Object.values(input);
+                    break;
+                case 'stringify':
+                    result = JSON.stringify(input, null, 2);
+                    break;
+                case 'parse':
+                    result = typeof input === 'string' ? JSON.parse(input) : input;
+                    break;
+                default:
+                    result = input;
+            }
+            return { success: true, operation, result };
+        } catch (error) {
+            return { success: false, operation, error: error.message };
+        }
     }
 
     /**
-     * Parse Text Node
+     * Parse Text Node - real regex match, split, replace, extract
      */
     async executeParseText(node, workflow, connections) {
-        return { matches: ['match1', 'match2'] };
+        const config = node.config || {};
+        const text = config.text || '';
+        const operation = config.operation || 'match';
+        const pattern = config.pattern || '';
+        const flags = config.flags || 'g';
+
+        console.log(`🔍 Parse Text: operation=${operation}, pattern="${pattern}"`);
+
+        try {
+            let result;
+            switch (operation) {
+                case 'match': {
+                    const re = new RegExp(pattern, flags);
+                    result = text.match(re) || [];
+                    break;
+                }
+                case 'replace': {
+                    const re = new RegExp(pattern, flags);
+                    result = text.replace(re, config.replacement || '');
+                    break;
+                }
+                case 'split':
+                    result = text.split(new RegExp(pattern || config.delimiter || '\n'));
+                    break;
+                case 'trim':
+                    result = text.trim();
+                    break;
+                case 'lines':
+                    result = text.split('\n').map(l => l.trim()).filter(Boolean);
+                    break;
+                case 'count': {
+                    const re = new RegExp(pattern, flags);
+                    result = (text.match(re) || []).length;
+                    break;
+                }
+                case 'contains':
+                    result = pattern ? text.includes(pattern) : false;
+                    break;
+                case 'extract': {
+                    // Extract all capture group 1 matches
+                    const re = new RegExp(pattern, 'g');
+                    result = [];
+                    let m;
+                    while ((m = re.exec(text)) !== null) {
+                        result.push(m[1] !== undefined ? m[1] : m[0]);
+                    }
+                    break;
+                }
+                default:
+                    result = text;
+            }
+            return { success: true, operation, result, inputLength: text.length };
+        } catch (error) {
+            return { success: false, operation, error: error.message };
+        }
     }
 
     /**
-     * SQL Query Node
+     * SQL Query Node - real SQLite query against the project database
      */
     async executeSQLQuery(node, workflow, connections) {
-        return { rows: [{ id: 1, name: 'test' }] };
+        const sqlite3 = require('sqlite3').verbose();
+        const path = require('path');
+        const config = node.config || {};
+        const query = config.query || '';
+        const dbPath = config.dbPath || path.join(process.cwd(), 'data', 'runtime_monitor.db');
+
+        if (!query.trim()) return { success: false, error: 'No SQL query provided' };
+
+        console.log(`🗄️ SQL Query: ${query.substring(0, 80)}...`);
+
+        return new Promise((resolve) => {
+            const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+                if (err) return resolve({ success: false, error: `DB open failed: ${err.message}` });
+
+                const isSelect = query.trim().toUpperCase().startsWith('SELECT') ||
+                                 query.trim().toUpperCase().startsWith('PRAGMA');
+
+                if (isSelect) {
+                    db.all(query, [], (err, rows) => {
+                        db.close();
+                        if (err) return resolve({ success: false, error: err.message });
+                        resolve({ success: true, rows, count: rows.length, query });
+                    });
+                } else {
+                    resolve({ success: false, error: 'Only SELECT queries allowed in SQL Query node' });
+                    db.close();
+                }
+            });
+        });
     }
 
     // ==================== QUEUE MANAGEMENT ====================
