@@ -4,6 +4,7 @@
  */
 
 const WorkflowEngine = require('../../../src/workflow-engine.js');
+const adapters = require('../../../src/engine/node-adapters.js');
 const { EventEmitter } = require('events');
 
 describe('WorkflowEngine', () => {
@@ -300,7 +301,7 @@ describe('WorkflowEngine', () => {
       const workflow = { executionState: new Map() };
       const connections = [];
 
-      const result = await engine.executeStart(node, workflow, connections);
+      const result = await adapters.executeStart(node, workflow, connections);
       expect(result.message).toBe('Workflow execution started');
     });
 
@@ -309,7 +310,7 @@ describe('WorkflowEngine', () => {
       const workflow = { executionState: new Map() };
       const connections = [];
 
-      const result = await engine.executeEnd(node, workflow, connections);
+      const result = await adapters.executeEnd(node, workflow, connections);
       expect(result.message).toBe('Workflow execution completed');
     });
 
@@ -326,7 +327,7 @@ describe('WorkflowEngine', () => {
       const workflow = { executionState: new Map() };
       const connections = [];
 
-      const result = await engine.executeCondition(node, workflow, connections);
+      const result = await adapters.executeCondition(node, workflow, connections);
       expect(result.result).toBe(true);
       expect(result.branch).toBe('true');
     });
