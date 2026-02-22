@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 
 let mainWindow;
 let logsWindow;
+let autoClickerWindow;
 let serverProcess;
 
 // Create the browser window
@@ -41,9 +42,38 @@ function createWindow() {
     if (logsWindow) {
       logsWindow.close();
     }
+    if (autoClickerWindow) {
+      autoClickerWindow.close();
+    }
     if (serverProcess) {
       serverProcess.kill();
     }
+  });
+}
+
+function createAutoClickerWindow() {
+  if (autoClickerWindow) {
+    autoClickerWindow.focus();
+    return;
+  }
+
+  autoClickerWindow = new BrowserWindow({
+    width: 1000,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    title: 'Runtime Hub - Auto-Clicker',
+    backgroundColor: '#111827',
+    parent: mainWindow
+  });
+
+  autoClickerWindow.loadFile(path.join(__dirname, '../public/auto-clicker-test.html'));
+
+  autoClickerWindow.on('closed', () => {
+    autoClickerWindow = null;
   });
 }
 
@@ -192,6 +222,13 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+L',
           click: () => {
             createLogsWindow();
+          }
+        },
+        {
+          label: 'Open Auto-Clicker',
+          accelerator: 'CmdOrCtrl+K',
+          click: () => {
+            createAutoClickerWindow();
           }
         },
         { type: 'separator' },
