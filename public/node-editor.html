@@ -583,9 +583,9 @@
                 document.getElementById('workflowStatus').textContent = 'Offline';
             });
             
-            // Workflow execution updates (server emits 'execution_update')
-            socket.on('execution_update', (data) => {
-                console.log('Execution update:', data);
+            // Workflow execution updates (engine emits 'workflow_update')
+            socket.on('workflow_update', (data) => {
+                console.log('Workflow update:', data);
                 if (data.workflowId === currentWorkflowId) {
                     handleWorkflowUpdate(data);
                 }
@@ -714,28 +714,28 @@
             return icons[category] || 'fa-cube';
         }
 
-        // Handle workflow updates (server sends { type: 'workflow_started'|'workflow_completed'|'workflow_error', workflowId })
+        // Handle workflow updates (engine sends { status: 'completed'|'error'|'stopped', workflowId })
         function handleWorkflowUpdate(data) {
             const statusEl = document.getElementById('workflowStatus');
-            switch (data.type) {
-                case 'workflow_started':
+            switch (data.status) {
+                case 'running':
                     statusEl.textContent = 'Running';
                     statusEl.className = 'text-green-400 font-bold';
                     break;
-                case 'workflow_completed':
+                case 'completed':
                     statusEl.textContent = 'Completed';
                     statusEl.className = 'text-blue-400 font-bold';
                     clearNodeHighlights();
                     currentWorkflowId = null;
                     break;
-                case 'workflow_error':
+                case 'error':
                     statusEl.textContent = 'Error';
                     statusEl.className = 'text-red-400 font-bold';
                     clearNodeHighlights();
                     currentWorkflowId = null;
-                    showNotification('Workflow Error', data.error || 'Workflow execution failed', 'error');
+                    showNotification('Workflow Error', (data.data && data.data.error) || 'Workflow execution failed', 'error');
                     break;
-                case 'workflow_stopped':
+                case 'stopped':
                     statusEl.textContent = 'Stopped';
                     statusEl.className = 'text-yellow-400 font-bold';
                     clearNodeHighlights();
@@ -744,21 +744,21 @@
             }
         }
 
-        // Handle node execution updates (server sends { type: 'node_started'|'node_completed', nodeId, workflowId })
+        // Handle node execution updates (engine sends { status: 'running'|'completed'|'error', nodeId, workflowId })
         function handleNodeUpdate(data) {
             const nodeElement = document.getElementById(data.nodeId);
             if (!nodeElement) return;
 
-            switch (data.type) {
-                case 'node_started':
+            switch (data.status) {
+                case 'running':
                     highlightNode(nodeElement, 'running');
                     break;
-                case 'node_completed':
+                case 'completed':
                     highlightNode(nodeElement, 'completed');
                     break;
-                case 'node_error':
+                case 'error':
                     highlightNode(nodeElement, 'error');
-                    console.error('Node execution error:', data.error);
+                    console.error('Node execution error:', data.data && data.data.error);
                     break;
             }
         }
@@ -1212,11 +1212,13 @@
             document.getElementById('selectedNode').textContent = 'No selection';
         }
 
-        // Update node input
+        // Update node input - mirrors value to node.config so the workflow engine can read it
         function updateNodeInput(nodeId, inputIndex, value) {
             const node = nodes.find(n => n.id === nodeId);
             if (node) {
                 node.inputs[inputIndex].value = value;
+                if (!node.config) node.config = {};
+                node.config[node.inputs[inputIndex].name] = value;
             }
         }
 

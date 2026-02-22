@@ -132,26 +132,22 @@ class WorkflowEngine extends EventEmitter {
             workflow.status = 'completed';
             workflow.endTime = Date.now();
             workflow.duration = workflow.endTime - workflow.startTime;
+            this.runningWorkflows.delete(workflowId);
             
             if (this.config.workflow.enableDebugLogging) {
                 console.log(`✅ Workflow completed: ${workflowId} (${workflow.duration}ms)`);
             }
             this.broadcastWorkflowUpdate(workflowId, 'completed', workflow);
-            
+
         } catch (error) {
-            // Create error workflow object
-            workflow = {
-                id: workflowId,
-                nodes: nodes,
-                connections: connections,
-                executionState: new Map(),
-                startTime: Date.now(),
-                endTime: Date.now(),
-                duration: 0,
-                status: 'error',
-                error: error.message,
-                cancelled: false
-            };
+            if (workflow) {
+                workflow.status = 'error';
+                workflow.error = error.message;
+                workflow.endTime = Date.now();
+                workflow.duration = workflow.endTime - (workflow.startTime || Date.now());
+                this.runningWorkflows.delete(workflowId);
+                this.broadcastWorkflowUpdate(workflowId, 'error', { error: error.message });
+            }
         }
 
         // Update metrics and history
@@ -188,6 +184,9 @@ class WorkflowEngine extends EventEmitter {
         nodeState.status = 'running';
         nodeState.startTime = Date.now();
         workflow.executionState.set(nodeId, nodeState);
+
+        // Broadcast node running state
+        this.broadcastNodeUpdate(workflow.id, nodeId, 'running', {});
 
         try {
             // Get node executor
@@ -375,7 +374,7 @@ class WorkflowEngine extends EventEmitter {
     }
 
     async executePython(node, workflow, connections) {
-        const code = node.config.code || '';
+        const code = (node.config && node.config.code) || '';
         console.log(`🐍 Executing Python code`);
         return { output: 'Simulated Python execution' };
     }
@@ -402,9 +401,10 @@ class WorkflowEngine extends EventEmitter {
      * Condition Node
      */
     async executeCondition(node, workflow, connections) {
-        const condition = node.config.condition || '';
-        const operator = node.config.operator || 'equals';
-        const value = node.config.value || '';
+        const config = node.config || {};
+        const condition = config.condition || '';
+        const operator = config.operator || 'equals';
+        const value = config.value || '';
         
         // Simple condition evaluation
         let result = false;
@@ -429,8 +429,9 @@ class WorkflowEngine extends EventEmitter {
      * Delay Node
      */
     async executeDelay(node, workflow, connections) {
-        const duration = node.config.duration || 1000;
-        const unit = node.config.unit || 'ms';
+        const config = node.config || {};
+        const duration = config.duration || 1000;
+        const unit = config.unit || 'ms';
         
         let waitTime = duration;
         if (unit === 'seconds') waitTime *= 1000;
@@ -736,10 +737,11 @@ class WorkflowEngine extends EventEmitter {
      * HTTP Request Node - REAL HTTP REQUESTS
      */
     async executeHTTPRequest(node, workflow, connections) {
-        const url = node.config.url || '';
-        const method = node.config.method || 'GET';
-        const headers = node.config.headers || {};
-        const body = node.config.body || null;
+        const config = node.config || {};
+        const url = config.url || '';
+        const method = config.method || 'GET';
+        const headers = config.headers || {};
+        const body = config.body || null;
         
         console.log(`🌐 Making real HTTP ${method} request to: ${url}`);
         
