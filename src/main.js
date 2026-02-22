@@ -32,6 +32,11 @@ function createWindow() {
   // Load the node editor directly
   mainWindow.loadFile(path.join(__dirname, '../public/node-editor.html'));
 
+  // Capture console logs from main window
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[NODE EDITOR] ${message}`);
+  });
+
   // Dev tools in development
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
@@ -72,6 +77,11 @@ function createAutoClickerWindow() {
 
   autoClickerWindow.loadFile(path.join(__dirname, '../public/auto-clicker-test.html'));
 
+  // Open DevTools in dev mode
+  if (process.argv.includes('--dev')) {
+    autoClickerWindow.webContents.openDevTools();
+  }
+
   autoClickerWindow.on('closed', () => {
     autoClickerWindow = null;
   });
@@ -98,6 +108,21 @@ function createLogsWindow() {
 
   logsWindow.loadFile(path.join(__dirname, '../public/logs.html'));
 
+  // Capture console logs from renderer
+  logsWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[LOGS WINDOW] ${message}`);
+  });
+
+  // Open DevTools in dev mode
+  if (process.argv.includes('--dev')) {
+    logsWindow.webContents.openDevTools();
+  }
+
+  // Always open DevTools for logs window when toggled via menu
+  logsWindow.webContents.on('devtools-opened', () => {
+    console.log('DevTools opened for System Logs window');
+  });
+
   logsWindow.on('closed', () => {
     logsWindow = null;
   });
@@ -106,7 +131,8 @@ function createLogsWindow() {
 function startServer() {
   console.log('Starting Runtime Hub server...');
   serverProcess = spawn('node', [path.join(__dirname, 'server.js')], {
-    stdio: 'inherit'
+    stdio: 'inherit',
+    windowsHide: true  // Hide command prompt window on Windows
   });
 
   serverProcess.on('error', (error) => {

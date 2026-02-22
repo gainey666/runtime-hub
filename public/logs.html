@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Runtime Hub - System Logs</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body, html {
@@ -195,16 +195,30 @@
 
         // Initialize socket connection
         function initSocket() {
-            socket = io();
-
-            socket.on('connect', () => {
-                document.getElementById('connectionStatus').innerHTML = '<span class="text-green-400">● Connected</span>';
-                addLog('System', 'info', 'Connected to Runtime Hub server');
+            console.log('🔌 Initializing socket connection to http://127.0.0.1:3000...');
+            socket = io('http://127.0.0.1:3000', {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 10
             });
 
-            socket.on('disconnect', () => {
+            socket.on('connect', () => {
+                console.log('✅ Socket connected:', socket.id);
+                document.getElementById('connectionStatus').innerHTML = '<span class="text-green-400">● Connected</span>';
+                addLog('System', 'success', `Connected to Runtime Hub server (${socket.id})`);
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('❌ Socket connection error:', error);
+                document.getElementById('connectionStatus').innerHTML = '<span class="text-red-400">● Connection Error</span>';
+                addLog('System', 'error', 'Connection error: ' + error.message);
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.warn('⚠️ Socket disconnected:', reason);
                 document.getElementById('connectionStatus').innerHTML = '<span class="text-red-400">● Disconnected</span>';
-                addLog('System', 'error', 'Disconnected from server');
+                addLog('System', 'error', 'Disconnected from server: ' + reason);
             });
 
             // Listen for all socket events
@@ -406,8 +420,10 @@
         }
 
         // Initialize
-        initSocket();
         addLog('System', 'success', 'Log viewer initialized');
+        addLog('System', 'info', 'Current page protocol: ' + window.location.protocol);
+        addLog('System', 'info', 'Attempting socket connection to http://127.0.0.1:3000');
+        initSocket();
 
         // Capture console logs
         const originalConsole = {

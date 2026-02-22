@@ -16,7 +16,7 @@ function createConfig() {
     // Server configuration
     server: {
       port: parseInt(process.env.PORT) || 3000,
-      host: process.env.HOST || 'localhost',
+      host: process.env.HOST || '127.0.0.1',
     cors: {
       origin: isDevelopment ? true : process.env.ALLOWED_ORIGINS?.split(',') || [],
       credentials: true

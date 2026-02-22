@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Runtime Logger - Node Editor</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
@@ -455,7 +455,11 @@
 
         // Initialize socket connection
         function initSocket() {
-            socket = io();
+            console.log('🔌 Node editor: Connecting to http://127.0.0.1:3000...');
+            socket = io('http://127.0.0.1:3000', {
+                transports: ['websocket', 'polling'],
+                reconnection: true
+            });
             
             socket.on('connect', () => {
                 document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle mr-1 text-green-400"></i>Connected';
@@ -497,14 +501,22 @@
         // Initialize node palette
         function initPalette() {
             try {
+                console.log('🎨 initPalette() called');
                 const palette = document.getElementById('nodePalette');
                 const searchTerm = document.getElementById('searchNodes').value.toLowerCase();
-                
+
                 palette.innerHTML = '';
-                
+
                 // Check if NODE_LIBRARY is available
+                console.log('📚 Checking NODE_LIBRARY...', typeof NODE_LIBRARY, NODE_LIBRARY ? NODE_LIBRARY.length : 'undefined');
                 if (typeof NODE_LIBRARY === 'undefined') {
+                    palette.innerHTML = '<div class="p-4 text-red-400">❌ NODE_LIBRARY not loaded. Check console.</div>';
                     throw new Error('NODE_LIBRARY is not defined. Check if node-library.js loaded properly.');
+                }
+
+                if (!NODE_LIBRARY || NODE_LIBRARY.length === 0) {
+                    palette.innerHTML = '<div class="p-4 text-yellow-400">⚠️ NODE_LIBRARY is empty. No nodes available.</div>';
+                    return;
                 }
                 
                 // Group nodes by category
@@ -2011,11 +2023,13 @@
         }
 
         // Initialize everything
-        console.log('🚀 Initializing node editor...');
-        initSocket();
-        initCanvasEvents();
-        initPalette();
-        console.log('✅ Node editor initialized');
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('🚀 Initializing node editor...');
+            initSocket();
+            initCanvasEvents();
+            initPalette();
+            console.log('✅ Node editor initialized');
+        });
     </script>
 </body>
 </html>

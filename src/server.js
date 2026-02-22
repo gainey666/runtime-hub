@@ -6,6 +6,7 @@ const sqlite3 = require('sqlite3').verbose();
 const WorkflowEngine = require('./workflow-engine-wrapper');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const net = require('net');
 
 // Import configuration and error handling
 const { getConfig, isDevelopment } = require('./config');
@@ -27,14 +28,21 @@ const config = getConfig();
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: config.server.cors
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
 });
 
 // Initialize workflow engine with config
 const workflowEngine = new WorkflowEngine(io, config);
 
 // Middleware
-app.use(cors(config.server.cors));
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -184,7 +192,14 @@ function executePythonCode(nodeId, code, timeout = 30) {
 
 // Socket.IO connection handling for regular applications
 io.on('connection', (socket) => {
-  console.log('Application client connected:', socket.id);
+  console.log('Client connected:', socket.id);
+
+  // Emit connection log
+  io.emit('log_entry', {
+    source: 'Server',
+    level: 'info',
+    message: `Client connected: ${socket.id}`
+  });
 
   // Register new application
   socket.on('register_app', (data) => {
@@ -683,14 +698,62 @@ workflowEngine.on('nodeCompleted', (data) => {
   });
 });
 
-// Start server
-server.listen(config.server.port, config.server.host, () => {
-  console.log(`🚀 Runtime Logger server running on ${config.server.host}:${config.server.port}`);
-  console.log(`📊 Environment: ${config.isDevelopment ? 'Development' : config.isProduction ? 'Production' : 'Test'}`);
-  console.log(`🔗 Node Editor: http://${config.server.host}:${config.server.port}/node-editor`);
-  console.log(`📈 Dashboard: http://${config.server.host}:${config.server.port}/`);
-  
-  if (config.isDevelopment) {
-    console.log(`🐛 Debug logging enabled`);
+// Port availability check
+function checkPortInUse(port, host) {
+  return new Promise((resolve, reject) => {
+    const tester = net.createServer()
+      .once('error', err => {
+        if (err.code === 'EADDRINUSE') {
+          resolve(true); // Port in use
+        } else {
+          reject(err);
+        }
+      })
+      .once('listening', () => {
+        tester.close();
+        resolve(false); // Port free
+      })
+      .listen(port, host);
+  });
+}
+
+// Start server with port check
+checkPortInUse(config.server.port, config.server.host).then(inUse => {
+  if (inUse) {
+    const errorMsg = `❌ FATAL: Port ${config.server.port} already in use. Kill existing Runtime Hub process and restart.`;
+    console.error(errorMsg);
+    handleError(new Error(errorMsg), {
+      level: 'error',
+      message: errorMsg,
+      code: 'EADDRINUSE'
+    });
+    process.exit(1);
   }
+
+  server.listen(config.server.port, config.server.host, () => {
+    console.log(`🚀 Runtime Logger server running on ${config.server.host}:${config.server.port}`);
+    console.log(`📊 Environment: ${config.isDevelopment ? 'Development' : config.isProduction ? 'Production' : 'Test'}`);
+    console.log(`🔗 Node Editor: http://${config.server.host}:${config.server.port}/node-editor`);
+    console.log(`📈 Dashboard: http://${config.server.host}:${config.server.port}/`);
+
+    // Emit startup logs to all connected clients
+    io.emit('log_entry', {
+      source: 'Server',
+      level: 'success',
+      message: `Runtime Hub server started on port ${config.server.port}`
+    });
+
+    io.emit('log_entry', {
+      source: 'Server',
+      level: 'info',
+      message: `Environment: ${config.isDevelopment ? 'Development' : config.isProduction ? 'Production' : 'Test'}`
+    });
+
+    if (config.isDevelopment) {
+      console.log(`🐛 Debug logging enabled`);
+    }
+  });
+}).catch(err => {
+  console.error(`❌ Failed to check port availability:`, err);
+  process.exit(1);
 });

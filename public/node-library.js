@@ -452,34 +452,13 @@ class NodeLibrary {
 
         this.nodeTypes.set(nodeDefinition.name, nodeDefinition);
         this.categories.add(nodeDefinition.category);
-        
+
         // Emit event for UI update
         if (typeof window !== 'undefined' && window.dispatchEvent) {
             window.dispatchEvent(new CustomEvent('nodeAdded', {
                 detail: { node: nodeDefinition }
             }));
         }
-
-        // === AUTO-CLICKER NODE ===
-        this.addNode({
-            category: 'Automation',
-            name: 'Auto-Clicker',
-            icon: '🖱️',
-            color: '#ff6b6b',
-            description: 'Configure and run auto-clicker with OCR',
-            inputs: ['trigger'],
-            outputs: ['started', 'stopped', 'error'],
-            config: {
-                regionX: 0,
-                regionY: 0,
-                regionWidth: 800,
-                regionHeight: 600,
-                searchText: '',
-                refreshRate: 1000,
-                maxIterations: 0,
-                clickButton: 'left'
-            }
-        });
     }
 
     // Remove node type
@@ -610,3 +589,5 @@ window.NodeLibrary = NodeLibrary;
 // Also export as NODE_LIBRARY array for compatibility with node-editor.html
 const nodeLibraryInstance = new NodeLibrary();
 window.NODE_LIBRARY = Array.from(nodeLibraryInstance.nodeTypes.values());
+
+console.log(`✅ Node Library loaded: ${window.NODE_LIBRARY.length} nodes available`);

@@ -15,7 +15,8 @@ class ErrorLogger {
         this.systemInfo = {};
         this.startTime = new Date();
         this.maxLogs = 1000; // Prevent memory issues
-        this.autoExport = true; // Auto-export on critical errors
+        this.autoExport = false; // Disabled - causes infinite loop
+        this.exporting = false; // Prevent recursion
 
         if (isBrowser) {
             this.setupErrorCapture();
@@ -209,6 +210,9 @@ class ErrorLogger {
     }
 
     exportDebugData() {
+        if (this.exporting) return; // Prevent recursion
+        this.exporting = true;
+
         this.captureSystemInfo();
 
         const debugData = {
@@ -243,7 +247,11 @@ class ErrorLogger {
                     debugData: debugData,
                     timestamp: Date.now()
                 })
-            }).catch(err => console.error('Failed to save debug data:', err));
+            }).catch(err => {
+                // Don't use console.error - causes infinite loop
+            }).finally(() => {
+                this.exporting = false;
+            });
 
             // Also save to localStorage for persistence
             try {
