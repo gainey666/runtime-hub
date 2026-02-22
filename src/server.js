@@ -35,6 +35,28 @@ const io = socketIo(server, {
   }
 });
 
+// Buffer to store recent logs (last 100)
+const logBuffer = [];
+const MAX_LOG_BUFFER = 100;
+
+// Intercept io.emit for log_entry to buffer logs
+const originalEmit = io.emit.bind(io);
+io.emit = function(event, data) {
+  if (event === 'log_entry') {
+    // Add to buffer
+    logBuffer.push({
+      event,
+      data,
+      timestamp: new Date().toISOString()
+    });
+    // Keep only last MAX_LOG_BUFFER logs
+    if (logBuffer.length > MAX_LOG_BUFFER) {
+      logBuffer.shift();
+    }
+  }
+  return originalEmit(event, data);
+};
+
 // Initialize workflow engine with config
 const workflowEngine = new WorkflowEngine(io, config);
 
@@ -193,6 +215,11 @@ function executePythonCode(nodeId, code, timeout = 30) {
 // Socket.IO connection handling for regular applications
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+
+  // Send buffered logs to new client
+  logBuffer.forEach(bufferedLog => {
+    socket.emit(bufferedLog.event, bufferedLog.data);
+  });
 
   // Emit connection log
   io.emit('log_entry', {
