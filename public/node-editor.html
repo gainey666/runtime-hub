@@ -814,59 +814,7 @@
         }
 
         // Get category icon
-        function getCategoryIcon(category) {
-            const icons = {
-                'Control Flow': 'fa-code-branch',
-                'Python': 'fa-python',
-                'File System': 'fa-folder',
-                'Windows System': 'fa-windows',
-                'Network': 'fa-network-wired',
-                'Data Processing': 'fa-database',
-                'Database': 'fa-server',
-                'Notification': 'fa-bell',
-                'Logging': 'fa-file-alt',
-                'Automation': 'fa-robot',
-                'Security': 'fa-shield-alt'
-            };
-            return icons[category] || 'fa-cube';
-        }
-
-        // Canvas drag and drop
-        function initCanvas() {
-            const canvas = document.getElementById('canvas');
-            const nodeLayer = document.getElementById('nodeLayer');
-            
-            canvas.addEventListener('dragover', (e) => {
-                e.preventDefault();
-            });
-            
-            canvas.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const nodeType = JSON.parse(e.dataTransfer.getData('nodeType'));
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                
-                createNode(nodeType, x, y);
-            });
-            
-            canvas.addEventListener('mousemove', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const x = Math.round(e.clientX - rect.left);
-                const y = Math.round(e.clientY - rect.top);
-                document.getElementById('mousePosition').textContent = `X: ${x}, Y: ${y}`;
-                
-                if (isConnecting && connectionStart) {
-                    updateTempConnection(x, y);
-                }
-            });
-            
-            canvas.addEventListener('click', (e) => {
-                if (e.target === canvas || e.target === nodeLayer) {
-                    deselectAllNodes();
-                }
-            });
-        }
+        // Duplicate getCategoryIcon and initCanvas removed - already defined earlier
 
         // Create node
         function createNode(nodeType, x, y) {

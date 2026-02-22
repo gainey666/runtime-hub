@@ -1,4 +1,4 @@
-ok /**
+/**
  * Auto-Clicker API Server
  * Provides endpoints for React UI to control auto-clicking functionality
  */
