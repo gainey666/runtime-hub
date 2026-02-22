@@ -89,7 +89,12 @@ class AutoClickerEngine extends EventEmitter {
             session.status = 'running';
             this.runningSessions.add(sessionId);
             this.emit('status_update', { sessionId, status: 'running' });
-            await this.runMainLoop(sessionId);
+            // Don't await - let it run in background
+            this.runMainLoop(sessionId).catch(error => {
+                console.error(`❌ Resume error for session ${sessionId}:`, error);
+                session.status = 'error';
+                session.error = error.message;
+            });
         }
     }
     validateConfig(config) {
@@ -110,8 +115,12 @@ class AutoClickerEngine extends EventEmitter {
         if (!config.click || !['left', 'right', 'middle'].includes(config.click.button)) {
             throw new Error('Invalid click configuration');
         }
-        if (!config.refreshRate || config.refreshRate <= 0 || config.refreshRate > 60000) {
-            throw new Error('Invalid refresh rate (must be between 1ms and 60s)');
+        if (!config.refreshRate || config.refreshRate < 100 || config.refreshRate > 60000) {
+            throw new Error('Invalid refresh rate (must be between 100ms and 60s for safety)');
+        }
+        // Safety limits
+        if (config.maxIterations && config.maxIterations > 10000) {
+            throw new Error('Max iterations limited to 10000 for safety');
         }
     }
     async runMainLoop(sessionId) {
