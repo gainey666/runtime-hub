@@ -1052,12 +1052,25 @@
         }
 
         function updateConnectionPath(path, fromNode, toNode, fromPortIndex, toPortIndex) {
-            const fromX = fromNode.x + 200; // Node width
-            const fromY = fromNode.y + 60 + fromPortIndex * 35;
+            // Get actual node elements for precise positioning
+            const fromElement = document.getElementById(fromNode.id);
+            const toElement = document.getElementById(toNode.id);
+
+            if (!fromElement || !toElement) return;
+
+            // Get node dimensions
+            const fromRect = fromElement.getBoundingClientRect();
+            const toRect = toElement.getBoundingClientRect();
+            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+
+            // Calculate connection points relative to canvas
+            const fromX = fromNode.x + fromRect.width;
+            const fromY = fromNode.y + fromRect.height / 2 + (fromPortIndex * 30);
             const toX = toNode.x;
-            const toY = toNode.y + 60 + toPortIndex * 35;
-            
-            const d = `M ${fromX} ${fromY} Q ${(fromX + toX) / 2} ${(fromY + toY) / 2 - 50} ${toX} ${toY}`;
+            const toY = toNode.y + toRect.height / 2 + (toPortIndex * 30);
+
+            // Create curved path
+            const d = `M ${fromX} ${fromY} C ${fromX + 100} ${fromY}, ${toX - 100} ${toY}, ${toX} ${toY}`;
             path.setAttribute('d', d);
         }
 
@@ -1101,13 +1114,13 @@
                 alert('No connections in workflow!');
                 return;
             }
-            
+
             try {
                 document.getElementById('workflowStatus').textContent = 'Starting...';
                 document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
-                
+
                 // Send workflow to server for execution
-                const response = await fetch('/api/workflows/execute', {
+                const response = await fetch('http://127.0.0.1:3000/api/workflows/execute', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1143,9 +1156,9 @@
                 alert('No workflow is currently running!');
                 return;
             }
-            
+
             try {
-                const response = await fetch(`/api/workflows/${currentWorkflowId}/stop`, {
+                const response = await fetch(`http://127.0.0.1:3000/api/workflows/${currentWorkflowId}/stop`, {
                     method: 'POST'
                 });
                 
