@@ -1,0 +1,171 @@
+graph TB
+    subgraph "UI Layer Hierarchy"
+        App[App Component]
+        
+        subgraph "Layout Components"
+            Header[Header Component]
+            Sidebar[Sidebar Component]
+            Footer[Footer Component]
+            MainContent[Main Content Area]
+        end
+        
+        subgraph "Node Editor Components"
+            NodeEditor[Node Editor Canvas]
+            Node[Node Component]
+            NodePort[Node Port]
+            Connection[Connection Line]
+            PropertyPanel[Property Panel]
+            Toolbar[Toolbar]
+            StatusPanel[Status Panel]
+            ErrorDisplay[Error Display]
+        end
+        
+        subgraph "Auto-Clicker Monitoring Components"
+            AutoClickerMonitor[Auto-Clicker Monitor]
+            RealTimeEvents[Real-time Event Stream]
+            SessionControl[Session Control Panel]
+            CapturePreview[Screen Capture Preview]
+            OCRResults[OCR Results Display]
+            ClickLog[Click Execution Log]
+            PerformanceMetrics[Performance Metrics]
+        end
+        
+        subgraph "Dashboard Components"
+            Dashboard[Main Dashboard]
+            ActivityFeed[Activity Feed]
+            SystemStatus[System Status Panel]
+            QuickActions[Quick Actions Bar]
+        end
+        end
+        
+        subgraph "Workflow Components"
+            WorkflowList[Workflow List]
+            WorkflowCard[Workflow Card]
+            WorkflowControls[Workflow Controls]
+        end
+        
+        subgraph "Common Components"
+            Button[Button]
+            Modal[Modal]
+            Tooltip[Tooltip]
+            Loading[Loading Spinner]
+            Icon[Icon Component]
+            Badge[Badge]
+            Dropdown[Dropdown]
+        end
+        
+        subgraph "Auto-Clicker Components"
+            AutoClickerDashboard[Auto-Clicker Dashboard]
+            AppConnection[App Connection Status]
+            ClickLocation[Click Location Display]
+            SessionControls[Session Controls]
+        end
+    end
+    
+    %% Component Relationships
+    App --> Header
+    App --> Sidebar
+    App --> MainContent
+    App --> Footer
+    
+    %% Auto-Clicker Integration
+    MainContent --> AutoClickerMonitor
+    AutoClickerMonitor --> RealTimeEvents
+    AutoClickerMonitor --> SessionControl
+    AutoClickerMonitor --> CapturePreview
+    AutoClickerMonitor --> OCRResults
+    AutoClickerMonitor --> ClickLog
+    AutoClickerMonitor --> PerformanceMetrics
+    
+    %% Dashboard Integration
+    MainContent --> Dashboard
+    Dashboard --> ActivityFeed
+    Dashboard --> SystemStatus
+    Dashboard --> QuickActions
+    
+    %% Node Editor Integration
+    MainContent --> NodeEditor
+    NodeEditor --> Node
+    NodeEditor --> Connection
+    NodeEditor --> PropertyPanel
+    NodeEditor --> Toolbar
+    NodeEditor --> StatusPanel
+    NodeEditor --> ErrorDisplay
+    
+    %% Auto-Clicker to Node Editor Communication
+    AutoClickerMonitor -.->|events| NodeEditor
+    SessionControl -.->|control| AutoClickerMonitor
+    
+    MainContent --> NodeEditor
+    MainContent --> WorkflowList
+    MainContent --> AutoClickerDashboard
+    
+    NodeEditor --> Node
+    NodeEditor --> Connection
+    NodeEditor --> PropertyPanel
+    NodeEditor --> Toolbar
+    NodeEditor --> StatusPanel
+    NodeEditor --> ErrorDisplay
+    
+    Node --> NodePort
+    Node --> Button
+    Node --> Icon
+    
+    PropertyPanel --> Button
+    PropertyPanel --> Dropdown
+    PropertyPanel --> Tooltip
+    
+    Toolbar --> Button
+    Toolbar --> Dropdown
+    Toolbar --> Icon
+    
+    StatusPanel --> Badge
+    StatusPanel --> Icon
+    StatusPanel --> Loading
+    
+    ErrorDisplay --> Button
+    ErrorDisplay --> Icon
+    ErrorDisplay --> Tooltip
+    
+    WorkflowList --> WorkflowCard
+    WorkflowCard --> Button
+    WorkflowCard --> Badge
+    WorkflowCard --> Tooltip
+    
+    AutoClickerDashboard --> AppConnection
+    AutoClickerDashboard --> ClickLocation
+    AutoClickerDashboard --> SessionControls
+    AutoClickerDashboard --> StatusPanel
+    
+    AppConnection --> Badge
+    AppConnection --> Icon
+    
+    ClickLocation --> Icon
+    ClickLocation --> Tooltip
+    
+    SessionControls --> Button
+    SessionControls --> Loading
+    
+    %% Common component usage
+    Button --> Icon
+    Modal --> Button
+    Dropdown --> Button
+    Tooltip --> Icon
+    
+    %% Styling and theming
+    style App fill:#e1f5fe
+    style NodeEditor fill:#f3e5f5
+    style AutoClickerDashboard fill:#e8f5e8
+    
+    %% Component types
+    classDef layout fill:#e3f2fd,stroke:#1976d2
+    classDef nodeEditor fill:#f3e5f5,stroke:#7b1fa2
+    classDef workflow fill:#e8f5e8,stroke:#388e3c
+    classDef common fill:#fff3e0,stroke:#f57c00
+    classDef autoClicker fill:#fce4ec,stroke:#c2185b
+    
+    class Header,Sidebar,Footer,MainContent layout
+    class NodeEditor,Node,NodePort,Connection,PropertyPanel,Toolbar,StatusPanel,ErrorDisplay nodeEditor
+    class WorkflowList,WorkflowCard,WorkflowControls workflow
+    class Button,Modal,Tooltip,Loading,Icon,Badge,Dropdown common
+    class AutoClickerDashboard,AppConnection,ClickLocation,SessionControls autoClicker

@@ -1,0 +1,22 @@
+--- a/python-agent/simple_test.py
++++ b/python-agent/simple_test.py
+@@ -137,7 +137,9 @@ def test_error_handling():
+     print("✅ Error handling test completed")
+ 
+ def test_periodic_task():
++    # Fix: Ensure monitor variable is properly defined
++    monitor = RuntimeMonitorAgent('test-agent')
++    
+     @monitor.monitor_function
+     def periodic_data_processing():
+         """Simulate periodic data processing task"""
+         time.sleep(0.1)  # Simulate processing time
+         return {'processed_items': 42, 'timestamp': time.time()}
+ 
+     print("🔄 Testing periodic task monitoring...")
+     
+     # Run the periodic task multiple times
+     for i in range(3):
+         result = periodic_data_processing()
+         print(f"   Periodic task {i+1}: {result}")
+         time.sleep(0.2)  # Wait between tasks

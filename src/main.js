@@ -5,18 +5,18 @@ const { spawn } = require('child_process');
 let mainWindow;
 let serverProcess;
 
+// Create the browser window
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: 1200,
+    height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../assets/icon.png'),
-    title: 'Runtime Hub - Monitor & Debug Your Code',
-    show: false
+    title: 'Runtime Logger',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png') // Optional: Add an icon
   });
 
   // Start the server first

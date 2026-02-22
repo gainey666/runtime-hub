@@ -1,0 +1,115 @@
+{
+  "name": "Python Program Flow Demo",
+  "description": "Visual workflow demonstrating your enhanced simple_test.py program",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "Start",
+      "category": "Control Flow",
+      "x": 50,
+      "y": 150,
+      "config": {}
+    },
+    {
+      "id": "calculate",
+      "type": "Execute Python",
+      "category": "Python",
+      "x": 200,
+      "y": 150,
+      "config": {
+        "code": "# Calculate sum like your simple_test.py\nresult = 15 + 25\nprint(f\"✅ Calculated: 15 + 25 = {result}\")\nreturn result",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "validate",
+      "type": "Execute Python",
+      "category": "Python",
+      "x": 350,
+      "y": 150,
+      "config": {
+        "code": "# Validate result like your simple_test.py\nis_valid = result > 0\nprint(f\"✅ Validation: {result} is {'valid' if is_valid else 'invalid'}\")\nreturn is_valid",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "save",
+      "type": "Execute Python",
+      "category": "Python",
+      "x": 500,
+      "y": 150,
+      "config": {
+        "code": "# Save data like your simple_test.py\nimport time\nsaved_data = {\n    'value': result,\n    'valid': is_valid,\n    'timestamp': time.time()\n}\nprint(f\"✅ Saved: {saved_data}\")\nreturn saved_data",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "report",
+      "type": "Execute Python",
+      "category": "Python",
+      "x": 650,
+      "y": 150,
+      "config": {
+        "code": "# Generate report like your simple_test.py\nreport = {\n    'summary': f\"Processed value {saved_data['value']} with validity {saved_data['valid']}\",\n    'timestamp': saved_data['timestamp'],\n    'status': 'completed' if saved_data['valid'] else 'failed'\n}\nprint(f\"📊 Generated report: {report}\")\nreturn report",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "notify",
+      "type": "Execute Python",
+      "category": "Python",
+      "x": 800,
+      "y": 150,
+      "config": {
+        "code": "# Send notification like your simple_test.py\nnotification = {\n    'title': 'Workflow Completed',\n    'message': f\"Result: {report['summary']}\",\n    'type': 'success' if report['status'] == 'completed' else 'warning'\n}\nprint(f\"📧 Notification sent: {notification}\")\nreturn notification",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "end",
+      "type": "End",
+      "category": "Control Flow",
+      "x": 950,
+      "y": 150,
+      "config": {}
+    }
+  ],
+  "connections": [
+    {
+      "source": "start",
+      "target": "calculate",
+      "sourcePort": "main",
+      "targetPort": "main"
+    },
+    {
+      "source": "calculate",
+      "target": "validate",
+      "sourcePort": "main",
+      "targetPort": "main"
+    },
+    {
+      "source": "validate",
+      "target": "save",
+      "sourcePort": "main",
+      "targetPort": "main"
+    },
+    {
+      "source": "save",
+      "target": "report",
+      "sourcePort": "main",
+      "targetPort": "main"
+    },
+    {
+      "source": "report",
+      "target": "notify",
+      "sourcePort": "main",
+      "targetPort": "main"
+    },
+    {
+      "source": "notify",
+      "target": "end",
+      "sourcePort": "main",
+      "targetPort": "main"
+    }
+  ]
+}

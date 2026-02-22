@@ -1,0 +1,3 @@
+continue:
+  enabled: true
+  workspace_root: /path/to/workspace

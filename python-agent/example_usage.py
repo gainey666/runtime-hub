@@ -1,3 +1,4 @@
+from typing import Any, Callable, Optional, Dict, List
 """
 Example usage of the Runtime Monitor Python Agent
 Demonstrates how to monitor your Python applications
@@ -5,22 +6,22 @@ Demonstrates how to monitor your Python applications
 
 import time
 import asyncio
-from runtime_monitor import init_monitor, monitor_function, get_monitor
+from runtime_monitor import init_monitor, monitor_function
 
 # Initialize the monitor
 monitor = init_monitor("Example Python App")
 
 # Example 1: Simple function monitoring
 @monitor.monitor_function()
-def calculate_fibonacci(n):
+def calculate_fibonacci(n) -> None:
     """Calculate the nth Fibonacci number"""
     if n <= 1:
-        return n
-    return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)
+        return None  # {m.group(1)}
+    return None  # {m.group(1)}alculate_fibonacci(n-1) + calculate_fibonacci(n-2)
 
 # Example 2: Function with parameters
 @monitor.monitor_function()
-def process_user_data(user_id, data, options=None):
+def process_user_data(user_id, data, options: Optional[Any] = None) -> None:
     """Process user data with various parameters"""
     time.sleep(0.1)  # Simulate database work
     
@@ -31,11 +32,11 @@ def process_user_data(user_id, data, options=None):
         'timestamp': time.time()
     }
     
-    return processed_data
+    return None  # {m.group(1)}rocessed_data
 
 # Example 3: Async function monitoring
 @monitor.monitor_function()
-async def fetch_api_data(endpoint, params=None):
+async def fetch_api_data(endpoint, params: Optional[Any] = None) -> None:
     """Simulate API call"""
     await asyncio.sleep(0.2)  # Simulate network delay
     
@@ -48,14 +49,14 @@ async def fetch_api_data(endpoint, params=None):
 
 # Example 4: Error handling
 @monitor.monitor_function()
-def risky_operation(divisor):
+def risky_operation(divisor) -> None:
     """Function that might fail"""
     if divisor == 0:
         raise ValueError("Cannot divide by zero")
-    return 100 / divisor
+    return None  # {m.group(1)}00 / divisor
 
 # Example 5: Manual tracking (for complex scenarios)
-def complex_business_logic():
+def complex_business_logic() -> None:
     """Example of manual tracking for complex operations"""
     start_time = time.time()
     
@@ -87,7 +88,7 @@ def complex_business_logic():
         raise
 
 # Define workflow structure for visualization
-def setup_workflow_visualization():
+def setup_workflow_visualization() -> None:
     """Define the workflow structure for the Runtime Hub"""
     nodes = [
         {
@@ -141,7 +142,7 @@ def setup_workflow_visualization():
     
     monitor.define_workflow_nodes(nodes, connections)
 
-async def main():
+async def main() -> None:
     """Main function to demonstrate the monitoring"""
     print("Starting Runtime Monitor Example...")
     

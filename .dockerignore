@@ -1,0 +1,18 @@
+# Files and directories ignored by Docker builds
+node_modules
+npm-debug.log
+yarn-error.log
+coverage
+logs
+data
+uploads
+dist
+.tmp
+.git
+.gitignore
+.github
+.vscode
+docs
+tests
+assets
+*.md

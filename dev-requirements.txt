@@ -1,0 +1,13 @@
+# Python Mechanic Development Dependencies
+vulture>=4.0.0
+mypy>=1.0.0
+pytest>=7.0.0
+pytest-cov>=4.0.0
+snakefood>=2.2.0
+jscodeshift>=0.14.0
+ts-node>=10.0.0
+typescript>=4.9.0
+
+# Runtime debugging (stdlib)
+faulthandler
+tracemalloc
