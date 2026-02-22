@@ -8,8 +8,28 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
+        /* Reset and viewport handling for any monitor size */
+        * {
+            box-sizing: border-box;
+        }
+
         body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
+            position: fixed;
+        }
+
+        /* Responsive scaling based on viewport */
+        :root {
+            --toolbar-height: clamp(50px, 6vh, 70px);
+            --status-bar-height: clamp(32px, 4vh, 48px);
+            --palette-width: clamp(250px, 20vw, 320px);
+            --base-font-size: clamp(12px, 0.9vw, 16px);
+            --button-padding-x: clamp(8px, 1vw, 16px);
+            --button-padding-y: clamp(4px, 0.5vh, 8px);
         }
 
         .node {
@@ -153,16 +173,52 @@
             border: 2px solid #10b981;
             border-radius: 8px;
             overflow: hidden;
+            display: none; /* Hidden until implemented */
         }
         
         .toolbar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-bottom: 1px solid rgba(255,255,255,0.1);
+            height: var(--toolbar-height);
+            min-height: var(--toolbar-height);
+            max-height: var(--toolbar-height);
         }
-        
+
         .status-bar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-top: 1px solid rgba(255,255,255,0.1);
+            height: var(--status-bar-height);
+            min-height: var(--status-bar-height);
+            max-height: var(--status-bar-height);
+            font-size: var(--base-font-size);
+        }
+
+        /* Main layout container */
+        .main-content {
+            height: calc(100vh - var(--toolbar-height) - var(--status-bar-height));
+            min-height: 0;
+        }
+
+        /* Node palette responsive width */
+        .node-palette {
+            width: var(--palette-width);
+            min-width: var(--palette-width);
+            max-width: var(--palette-width);
+        }
+
+        /* Responsive button sizing */
+        button {
+            padding: var(--button-padding-y) var(--button-padding-x);
+            font-size: var(--base-font-size);
+        }
+
+        /* Responsive text */
+        .toolbar h1 {
+            font-size: clamp(16px, 1.5vw, 24px);
+        }
+
+        .toolbar .text-sm {
+            font-size: var(--base-font-size);
         }
 
         /* Node execution highlighting */
@@ -192,11 +248,67 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.02); }
         }
+
+        /* Media queries for different monitor sizes */
+
+        /* Small screens (laptops 1366x768 and below) */
+        @media (max-height: 768px) {
+            :root {
+                --toolbar-height: 50px;
+                --status-bar-height: 32px;
+                --base-font-size: 12px;
+                --button-padding-x: 8px;
+                --button-padding-y: 4px;
+            }
+        }
+
+        /* Medium screens (1080p) */
+        @media (min-height: 769px) and (max-height: 1080px) {
+            :root {
+                --toolbar-height: 60px;
+                --status-bar-height: 40px;
+                --base-font-size: 14px;
+                --button-padding-x: 12px;
+                --button-padding-y: 6px;
+            }
+        }
+
+        /* Large screens (1440p and above) */
+        @media (min-height: 1081px) {
+            :root {
+                --toolbar-height: 70px;
+                --status-bar-height: 48px;
+                --base-font-size: 16px;
+                --button-padding-x: 16px;
+                --button-padding-y: 8px;
+            }
+        }
+
+        /* Ultra-wide and 4K monitors */
+        @media (min-height: 1441px) {
+            :root {
+                --toolbar-height: 80px;
+                --status-bar-height: 56px;
+                --palette-width: 350px;
+                --base-font-size: 18px;
+            }
+        }
+
+        /* Ensure everything fits on screen */
+        @media (max-height: 600px) {
+            .toolbar button i {
+                display: none; /* Hide icons on very small screens */
+            }
+            :root {
+                --toolbar-height: 40px;
+                --status-bar-height: 28px;
+            }
+        }
     </style>
 </head>
-<body class="bg-gray-900 text-white h-screen flex flex-col">
+<body class="bg-gray-900 text-white flex flex-col">
     <!-- Toolbar -->
-    <div class="toolbar p-3 flex items-center justify-between">
+    <div class="toolbar flex items-center justify-between px-4 shrink-0">
         <div class="flex items-center gap-4">
             <h1 class="text-xl font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
                 <i class="fas fa-project-diagram mr-2"></i>Runtime Logger
@@ -263,17 +375,17 @@
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 flex">
+    <div class="main-content flex">
         <!-- Node Palette -->
-        <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-            <div class="p-4 border-b border-gray-700">
+        <div class="node-palette bg-gray-800 border-r border-gray-700 flex flex-col shrink-0">
+            <div class="p-4 border-b border-gray-700 shrink-0">
                 <h2 class="text-lg font-bold mb-4 text-green-400">
                     <i class="fas fa-shapes mr-2"></i>Node Palette
                 </h2>
-                <input type="text" id="searchNodes" placeholder="Search nodes..." 
+                <input type="text" id="searchNodes" placeholder="Search nodes..."
                     class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400">
             </div>
-            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4" id="nodePalette" style="max-height: calc(100vh - 200px);">
+            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4 min-h-0" id="nodePalette">
                 <!-- Nodes will be rendered here -->
             </div>
         </div>
@@ -298,7 +410,7 @@
     </div>
 
     <!-- Status Bar -->
-    <div class="status-bar p-2 flex items-center justify-between text-sm">
+    <div class="status-bar px-4 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-4">
             <span class="text-gray-400">Runtime Logger v1.0</span>
             <span id="connectionStatus" class="text-yellow-400">
