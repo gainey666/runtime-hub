@@ -3,17 +3,26 @@
  * Automatically logs errors and exports debugging data
  */
 
+// Check if running in browser or Node.js
+const isBrowser = typeof window !== 'undefined';
+
 class ErrorLogger {
     constructor() {
         this.errors = [];
         this.logs = [];
         this.systemInfo = {};
         this.startTime = new Date();
-        this.setupErrorCapture();
-        this.setupConsoleCapture();
+        this.maxLogs = 1000; // Prevent memory issues
+
+        if (isBrowser) {
+            this.setupErrorCapture();
+            this.setupConsoleCapture();
+        }
     }
 
     setupErrorCapture() {
+        if (!isBrowser) return;
+
         // Capture JavaScript errors
         window.addEventListener('error', (event) => {
             this.logError('JavaScript Error', {
@@ -37,6 +46,8 @@ class ErrorLogger {
     }
 
     setupConsoleCapture() {
+        if (!isBrowser) return;
+
         // Override console methods to capture logs
         const originalConsole = {
             log: console.log,
@@ -76,9 +87,14 @@ class ErrorLogger {
         };
         this.errors.push(errorEntry);
         this.logs.push(errorEntry);
-        
-        // Auto-export critical errors
-        if (type.includes('Error') || type.includes('Exception')) {
+
+        // Limit log size
+        if (this.logs.length > this.maxLogs) {
+            this.logs = this.logs.slice(-this.maxLogs);
+        }
+
+        // Auto-export critical errors (browser only)
+        if (isBrowser && (type.includes('Error') || type.includes('Exception'))) {
             this.exportDebugData();
         }
     }
@@ -92,6 +108,11 @@ class ErrorLogger {
             severity: 'warning'
         };
         this.logs.push(logEntry);
+
+        // Limit log size
+        if (this.logs.length > this.maxLogs) {
+            this.logs = this.logs.slice(-this.maxLogs);
+        }
     }
 
     logInfo(type, data) {
@@ -103,9 +124,23 @@ class ErrorLogger {
             severity: 'info'
         };
         this.logs.push(logEntry);
+
+        // Limit log size
+        if (this.logs.length > this.maxLogs) {
+            this.logs = this.logs.slice(-this.maxLogs);
+        }
     }
 
     captureSystemInfo() {
+        if (!isBrowser) {
+            this.systemInfo = {
+                platform: 'Node.js',
+                nodeVersion: process.version,
+                timestamp: new Date().toISOString()
+            };
+            return;
+        }
+
         this.systemInfo = {
             url: window.location.href,
             userAgent: navigator.userAgent,
@@ -132,14 +167,16 @@ class ErrorLogger {
     }
 
     captureNodeEditorState() {
+        if (!isBrowser) return { status: 'Not in browser' };
+
         if (typeof window.nodes !== 'undefined' && typeof window.connections !== 'undefined') {
             return {
                 nodeCount: window.nodes.length,
                 connectionCount: window.connections.length,
                 selectedNode: window.selectedNode ? window.selectedNode.id : null,
-                workflowStatus: document.getElementById('workflowStatus') ? 
+                workflowStatus: document.getElementById('workflowStatus') ?
                     document.getElementById('workflowStatus').textContent : 'Unknown',
-                connectionStatus: document.getElementById('connectionStatus') ? 
+                connectionStatus: document.getElementById('connectionStatus') ?
                     document.getElementById('connectionStatus').textContent : 'Unknown'
             };
         }
@@ -147,17 +184,19 @@ class ErrorLogger {
     }
 
     captureServerStatus() {
+        if (!isBrowser) return { status: 'Not in browser' };
+
         return {
             serverUrl: window.location.origin,
             socketConnected: typeof window.socket !== 'undefined' && window.socket.connected,
-            pythonAgents: typeof window.pythonAgents !== 'undefined' ? 
+            pythonAgents: typeof window.pythonAgents !== 'undefined' ?
                 Object.keys(window.pythonAgents).length : 0
         };
     }
 
     exportDebugData() {
         this.captureSystemInfo();
-        
+
         const debugData = {
             exportTime: new Date().toISOString(),
             sessionStart: this.startTime.toISOString(),
@@ -181,20 +220,22 @@ class ErrorLogger {
             }
         };
 
-        // Create downloadable file
-        const blob = new Blob([JSON.stringify(debugData, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `runtime-logger-debug-${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        if (isBrowser) {
+            // Create downloadable file
+            const blob = new Blob([JSON.stringify(debugData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `runtime-logger-debug-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
 
-        // Also save to localStorage for persistence
-        try {
-            localStorage.setItem('runtimeLoggerDebug', JSON.stringify(debugData));
-        } catch (e) {
-            console.warn('Could not save debug data to localStorage:', e);
+            // Also save to localStorage for persistence
+            try {
+                localStorage.setItem('runtimeLoggerDebug', JSON.stringify(debugData));
+            } catch (e) {
+                console.warn('Could not save debug data to localStorage:', e);
+            }
         }
 
         return debugData;
@@ -216,39 +257,46 @@ class ErrorLogger {
     }
 }
 
-// Initialize error logger immediately
-window.errorLogger = new ErrorLogger();
+// Export for Node.js (CommonJS)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ErrorLogger;
+}
 
-// Auto-export on page unload
-window.addEventListener('beforeunload', () => {
-    if (window.errorLogger.errors.length > 0) {
-        window.errorLogger.exportDebugData();
-    }
-});
+// Initialize error logger in browser
+if (isBrowser) {
+    window.errorLogger = new ErrorLogger();
 
-// Export function for manual debugging
-window.exportDebugData = () => {
-    return window.errorLogger.exportDebugData();
-};
+    // Auto-export on page unload
+    window.addEventListener('beforeunload', () => {
+        if (window.errorLogger.errors.length > 0) {
+            window.errorLogger.exportDebugData();
+        }
+    });
 
-// Add debug button to page
-document.addEventListener('DOMContentLoaded', () => {
-    const debugButton = document.createElement('button');
-    debugButton.innerHTML = '🔍 Export Debug';
-    debugButton.style.cssText = `
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        z-index: 9999;
-        background: #ff4444;
-        color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: bold;
-    `;
-    debugButton.onclick = () => window.exportDebugData();
-    document.body.appendChild(debugButton);
-});
+    // Export function for manual debugging
+    window.exportDebugData = () => {
+        return window.errorLogger.exportDebugData();
+    };
+
+    // Add debug button to page
+    document.addEventListener('DOMContentLoaded', () => {
+        const debugButton = document.createElement('button');
+        debugButton.innerHTML = '🔍 Export Debug';
+        debugButton.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 9999;
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        `;
+        debugButton.onclick = () => window.exportDebugData();
+        document.body.appendChild(debugButton);
+    });
+}
