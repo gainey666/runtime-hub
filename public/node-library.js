@@ -441,6 +441,86 @@ class NodeLibrary {
                 keyLength: 32
             }
         });
+
+        // === FRONTEND DESIGN NODES ===
+        this.addNode({
+            category: 'Frontend Design',
+            name: 'Screenshot',
+            icon: '📸',
+            color: '#e91e8c',
+            description: 'Capture a screenshot of the screen or a specific window',
+            inputs: ['trigger'],
+            outputs: ['image', 'error'],
+            config: {
+                target: 'screen',
+                windowTitle: '',
+                format: 'png',
+                savePath: ''
+            }
+        });
+
+        this.addNode({
+            category: 'Frontend Design',
+            name: 'HTML Snapshot',
+            icon: '🌐',
+            color: '#9c27b0',
+            description: 'Fetch a URL and capture its full HTML source',
+            inputs: ['url'],
+            outputs: ['html', 'error'],
+            config: {
+                url: '',
+                timeout: 5000,
+                includeHeaders: false
+            }
+        });
+
+        this.addNode({
+            category: 'Frontend Design',
+            name: 'CSS Inject',
+            icon: '🎨',
+            color: '#2196f3',
+            description: 'Inject custom CSS into the node editor or a target window',
+            inputs: ['trigger'],
+            outputs: ['result', 'error'],
+            config: {
+                css: '',
+                target: 'node-editor',
+                persistent: false
+            }
+        });
+
+        this.addNode({
+            category: 'Frontend Design',
+            name: 'Image Resize',
+            icon: '🖼️',
+            color: '#ff9800',
+            description: 'Resize an image file to specified dimensions',
+            inputs: ['imagePath'],
+            outputs: ['outputPath', 'error'],
+            config: {
+                inputPath: '',
+                outputPath: '',
+                width: 800,
+                height: 600,
+                fit: 'cover',
+                format: 'png'
+            }
+        });
+
+        this.addNode({
+            category: 'Frontend Design',
+            name: 'Color Picker',
+            icon: '🎯',
+            color: '#00bcd4',
+            description: 'Extract dominant colors from an image file',
+            inputs: ['imagePath'],
+            outputs: ['colors', 'error'],
+            config: {
+                imagePath: '',
+                count: 5,
+                format: 'hex'
+            }
+        });
     }
 
     // Add new node type dynamically
