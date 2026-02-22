@@ -3,20 +3,22 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 let mainWindow;
+let logsWindow;
 let serverProcess;
 
 // Create the browser window
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1600,
+    height: 900,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    title: 'Runtime Logger',
-    icon: path.join(__dirname, '..', 'assets', 'icon.png') // Optional: Add an icon
+    title: 'Runtime Hub - Node Editor',
+    backgroundColor: '#0f172a',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png')
   });
 
   // Start the server first
@@ -26,8 +28,8 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Load the app
-  mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
+  // Load the node editor directly
+  mainWindow.loadFile(path.join(__dirname, '../public/node-editor.html'));
 
   // Dev tools in development
   if (process.argv.includes('--dev')) {
@@ -36,9 +38,38 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    if (logsWindow) {
+      logsWindow.close();
+    }
     if (serverProcess) {
       serverProcess.kill();
     }
+  });
+}
+
+function createLogsWindow() {
+  if (logsWindow) {
+    logsWindow.focus();
+    return;
+  }
+
+  logsWindow = new BrowserWindow({
+    width: 1200,
+    height: 700,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    title: 'Runtime Hub - System Logs',
+    backgroundColor: '#111827',
+    parent: mainWindow
+  });
+
+  logsWindow.loadFile(path.join(__dirname, '../public/logs.html'));
+
+  logsWindow.on('closed', () => {
+    logsWindow = null;
   });
 }
 
@@ -66,21 +97,36 @@ function createMenu() {
           label: 'New Workflow',
           accelerator: 'CmdOrCtrl+N',
           click: () => {
-            mainWindow.webContents.send('menu-new-workflow');
+            mainWindow.webContents.executeJavaScript('clearCanvas()');
           }
         },
         {
           label: 'Open Workflow',
           accelerator: 'CmdOrCtrl+O',
           click: () => {
-            mainWindow.webContents.send('menu-open-workflow');
+            mainWindow.webContents.executeJavaScript('loadWorkflow()');
           }
         },
         {
           label: 'Save Workflow',
           accelerator: 'CmdOrCtrl+S',
           click: () => {
-            mainWindow.webContents.send('menu-save-workflow');
+            mainWindow.webContents.executeJavaScript('saveWorkflow()');
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Export to LLM',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => {
+            mainWindow.webContents.executeJavaScript('exportToLLM()');
+          }
+        },
+        {
+          label: 'Import Python',
+          accelerator: 'CmdOrCtrl+I',
+          click: () => {
+            mainWindow.webContents.executeJavaScript('importPythonFile()');
           }
         },
         { type: 'separator' },
@@ -94,53 +140,46 @@ function createMenu() {
       ]
     },
     {
-      label: 'Monitor',
+      label: 'Workflow',
       submenu: [
         {
-          label: 'Start Monitoring',
-          accelerator: 'CmdOrCtrl+M',
+          label: 'Run Workflow',
+          accelerator: 'CmdOrCtrl+R',
           click: () => {
-            mainWindow.webContents.send('menu-start-monitoring');
+            mainWindow.webContents.executeJavaScript('runWorkflow()');
           }
         },
         {
-          label: 'Stop Monitoring',
-          accelerator: 'CmdOrCtrl+Shift+M',
+          label: 'Stop Workflow',
+          accelerator: 'CmdOrCtrl+Shift+R',
           click: () => {
-            mainWindow.webContents.send('menu-stop-monitoring');
+            mainWindow.webContents.executeJavaScript('stopWorkflow()');
           }
         },
         { type: 'separator' },
         {
-          label: 'Clear Logs',
+          label: 'Load Auto-Clicker Example',
           click: () => {
-            mainWindow.webContents.send('menu-clear-logs');
+            mainWindow.webContents.executeJavaScript('loadDefaultAutoClickerWorkflow()');
           }
         }
       ]
     },
     {
-      label: 'Workflow',
+      label: 'Edit',
       submenu: [
         {
-          label: 'Generate Code',
-          accelerator: 'CmdOrCtrl+G',
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
           click: () => {
-            mainWindow.webContents.send('menu-generate-code');
+            mainWindow.webContents.executeJavaScript('undo()');
           }
         },
         {
-          label: 'Export to LLM',
-          accelerator: 'CmdOrCtrl+E',
+          label: 'Redo',
+          accelerator: 'CmdOrCtrl+Y',
           click: () => {
-            mainWindow.webContents.send('menu-export-llm');
-          }
-        },
-        { type: 'separator' },
-        {
-          label: 'Auto Layout',
-          click: () => {
-            mainWindow.webContents.send('menu-auto-layout');
+            mainWindow.webContents.executeJavaScript('redo()');
           }
         }
       ]
@@ -149,56 +188,25 @@ function createMenu() {
       label: 'View',
       submenu: [
         {
-          label: 'Toggle Sidebar',
-          accelerator: 'CmdOrCtrl+B',
-          click: () => {
-            mainWindow.webContents.send('menu-toggle-sidebar');
-          }
-        },
-        {
-          label: 'Toggle Logs',
+          label: 'Open System Logs',
           accelerator: 'CmdOrCtrl+L',
           click: () => {
-            mainWindow.webContents.send('menu-toggle-logs');
+            createLogsWindow();
           }
         },
         { type: 'separator' },
         {
-          label: 'Zoom In',
-          accelerator: 'CmdOrCtrl+Plus',
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
           click: () => {
-            mainWindow.webContents.send('menu-zoom-in');
+            mainWindow.reload();
           }
         },
         {
-          label: 'Zoom Out',
-          accelerator: 'CmdOrCtrl+-',
+          label: 'Toggle Developer Tools',
+          accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
           click: () => {
-            mainWindow.webContents.send('menu-zoom-out');
-          }
-        },
-        {
-          label: 'Reset Zoom',
-          accelerator: 'CmdOrCtrl+0',
-          click: () => {
-            mainWindow.webContents.send('menu-zoom-reset');
-          }
-        }
-      ]
-    },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'About Runtime Hub',
-          click: () => {
-            mainWindow.webContents.send('menu-about');
-          }
-        },
-        {
-          label: 'Documentation',
-          click: () => {
-            require('electron').shell.openExternal('https://github.com/your-repo/runtime-hub');
+            mainWindow.webContents.toggleDevTools();
           }
         }
       ]

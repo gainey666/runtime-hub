@@ -174,7 +174,15 @@ class WorkflowEngine extends EventEmitter {
         const nodeType = node.type;
         
         console.log(`⚡ Executing node: ${nodeType} (${nodeId})`);
-        
+
+        // Broadcast to logs
+        this.io.emit('log_entry', {
+            source: 'WorkflowEngine',
+            level: 'info',
+            message: `Executing node: ${nodeType}`,
+            data: { nodeId, workflowId: workflow.id }
+        });
+
         // Update node state
         const nodeState = workflow.executionState.get(nodeId) || { status: 'idle', data: {} };
         nodeState.status = 'running';
@@ -195,8 +203,17 @@ class WorkflowEngine extends EventEmitter {
             nodeState.status = 'completed';
             nodeState.endTime = Date.now();
             nodeState.result = result;
+            nodeState.duration = nodeState.endTime - nodeState.startTime;
             workflow.executionState.set(nodeId, nodeState);
-            
+
+            // Log completion
+            this.io.emit('log_entry', {
+                source: 'WorkflowEngine',
+                level: 'success',
+                message: `Node completed: ${nodeType} (${nodeState.duration}ms)`,
+                data: { nodeId, result, duration: nodeState.duration }
+            });
+
             // Broadcast node update
             this.broadcastNodeUpdate(workflow.id, nodeId, 'completed', result);
             
@@ -207,8 +224,17 @@ class WorkflowEngine extends EventEmitter {
             nodeState.status = 'error';
             nodeState.error = error.message;
             nodeState.endTime = Date.now();
+            nodeState.duration = nodeState.endTime - nodeState.startTime;
             workflow.executionState.set(nodeId, nodeState);
-            
+
+            // Log error
+            this.io.emit('log_entry', {
+                source: 'WorkflowEngine',
+                level: 'error',
+                message: `Node failed: ${nodeType} - ${error.message}`,
+                data: { nodeId, error: error.message, duration: nodeState.duration }
+            });
+
             this.broadcastNodeUpdate(workflow.id, nodeId, 'error', { error: error.message });
             throw error;
         }

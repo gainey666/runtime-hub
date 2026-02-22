@@ -400,6 +400,57 @@ app.get('/node-editor', (req, res) => {
 
 // ==================== WORKFLOW EXECUTION API ====================
 
+// Export workflow to LLM
+app.post('/api/workflows/export-llm', asyncErrorHandler(async (req, res) => {
+  const fs = require('fs').promises;
+  const { prompt, timestamp, nodeCount, connectionCount } = req.body;
+
+  const filename = `workflow_export_${timestamp}.txt`;
+  const filepath = path.join(__dirname, '..', 'logs', filename);
+
+  await fs.writeFile(filepath, prompt, 'utf8');
+
+  res.json({
+    success: true,
+    path: filepath,
+    filename: filename
+  });
+}));
+
+// Export logs
+app.post('/api/logs/export', asyncErrorHandler(async (req, res) => {
+  const fs = require('fs').promises;
+  const { logs, timestamp } = req.body;
+
+  const filename = `system_logs_${timestamp}.json`;
+  const filepath = path.join(__dirname, '..', 'logs', filename);
+
+  await fs.writeFile(filepath, JSON.stringify(logs, null, 2), 'utf8');
+
+  res.json({
+    success: true,
+    path: filepath,
+    filename: filename
+  });
+}));
+
+// Export debug data
+app.post('/api/logs/debug', asyncErrorHandler(async (req, res) => {
+  const fs = require('fs').promises;
+  const { debugData, timestamp } = req.body;
+
+  const filename = `debug_${timestamp}.json`;
+  const filepath = path.join(__dirname, '..', 'logs', filename);
+
+  await fs.writeFile(filepath, JSON.stringify(debugData, null, 2), 'utf8');
+
+  res.json({
+    success: true,
+    path: filepath,
+    filename: filename
+  });
+}));
+
 // Execute workflow
 app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
   // Validate request body

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runtime Hub - System Logs</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            overflow: hidden;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .log-entry:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .log-timestamp {
+            color: #6b7280;
+            margin-right: 8px;
+        }
+
+        .log-level {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 11px;
+            margin-right: 8px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .log-level-info {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .log-level-warn {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .log-level-error {
+            background: #ef4444;
+            color: white;
+        }
+
+        .log-level-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .log-level-debug {
+            background: #6b7280;
+            color: white;
+        }
+
+        .log-message {
+            color: #e5e7eb;
+        }
+
+        .log-source {
+            color: #8b5cf6;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .filter-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .filter-btn.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #10b981;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+    <!-- Header -->
+    <div class="bg-gray-800 border-b border-gray-700 p-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
+                    System Logs
+                </h1>
+                <div id="connectionStatus" class="text-sm">
+                    <span class="text-yellow-400">● Connecting...</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <!-- Stats -->
+                <div class="stat-card">
+                    <div class="stat-value" id="totalLogs">0</div>
+                    <div class="stat-label">Total Logs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-red-400" id="errorCount">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-yellow-400" id="warnCount">0</div>
+                    <div class="stat-label">Warnings</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters & Controls -->
+        <div class="flex items-center gap-4 mt-4">
+            <div class="flex gap-2">
+                <button class="filter-btn active" data-level="all" onclick="filterLogs('all')">All</button>
+                <button class="filter-btn" data-level="info" onclick="filterLogs('info')">Info</button>
+                <button class="filter-btn" data-level="warn" onclick="filterLogs('warn')">Warn</button>
+                <button class="filter-btn" data-level="error" onclick="filterLogs('error')">Error</button>
+                <button class="filter-btn" data-level="success" onclick="filterLogs('success')">Success</button>
+                <button class="filter-btn" data-level="debug" onclick="filterLogs('debug')">Debug</button>
+            </div>
+
+            <div class="flex-1"></div>
+
+            <input type="text" id="searchInput" placeholder="Search logs..."
+                class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400"
+                oninput="searchLogs(this.value)">
+
+            <button onclick="clearLogs()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+                Clear Logs
+            </button>
+
+            <button onclick="exportLogs()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                Export
+            </button>
+
+            <label class="flex items-center gap-2">
+                <input type="checkbox" id="autoscroll" checked onchange="toggleAutoscroll(this.checked)">
+                <span class="text-sm">Auto-scroll</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Logs Container -->
+    <div class="flex-1 overflow-y-auto p-4" id="logsContainer">
+        <!-- Logs will be inserted here -->
+    </div>
+
+    <script src="error-logger.js"></script>
+    <script>
+        let socket;
+        let logs = [];
+        let currentFilter = 'all';
+        let searchTerm = '';
+        let autoscroll = true;
+        let stats = {
+            total: 0,
+            errors: 0,
+            warnings: 0
+        };
+
+        // Initialize socket connection
+        function initSocket() {
+            socket = io();
+
+            socket.on('connect', () => {
+                document.getElementById('connectionStatus').innerHTML = '<span class="text-green-400">● Connected</span>';
+                addLog('System', 'info', 'Connected to Runtime Hub server');
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('connectionStatus').innerHTML = '<span class="text-red-400">● Disconnected</span>';
+                addLog('System', 'error', 'Disconnected from server');
+            });
+
+            // Listen for all socket events
+            socket.onAny((eventName, ...args) => {
+                if (eventName !== 'log_entry') { // Avoid recursive logging
+                    addLog('Socket', 'debug', `Event: ${eventName}`, args);
+                }
+            });
+
+            // Server logs
+            socket.on('log_entry', (data) => {
+                addLog(data.source || 'Server', data.level || 'info', data.message, data.data);
+            });
+
+            // Workflow updates
+            socket.on('workflow_update', (data) => {
+                addLog('Workflow', 'info', `Workflow ${data.status}: ${data.workflowId}`);
+            });
+
+            // Node updates
+            socket.on('node_update', (data) => {
+                const level = data.status === 'error' ? 'error' : 'info';
+                addLog('Node', level, `Node ${data.nodeId}: ${data.status}`);
+            });
+
+            // Error notifications
+            socket.on('error', (error) => {
+                addLog('System', 'error', 'Error occurred', error);
+            });
+
+            // Auto-clicker events
+            socket.on('auto_clicker_update', (data) => {
+                addLog('Auto-Clicker', 'info', `Session ${data.sessionId}: ${data.status}`);
+            });
+        }
+
+        function addLog(source, level, message, data = null) {
+            const timestamp = new Date().toISOString();
+            const log = {
+                id: Date.now() + Math.random(),
+                timestamp,
+                source,
+                level,
+                message,
+                data
+            };
+
+            logs.push(log);
+            stats.total++;
+
+            if (level === 'error') stats.errors++;
+            if (level === 'warn') stats.warnings++;
+
+            updateStats();
+
+            if (shouldShowLog(log)) {
+                renderLog(log);
+                if (autoscroll) {
+                    scrollToBottom();
+                }
+            }
+        }
+
+        function shouldShowLog(log) {
+            if (currentFilter !== 'all' && log.level !== currentFilter) {
+                return false;
+            }
+
+            if (searchTerm && !matchesSearch(log)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        function matchesSearch(log) {
+            const term = searchTerm.toLowerCase();
+            return log.message.toLowerCase().includes(term) ||
+                   log.source.toLowerCase().includes(term) ||
+                   log.level.toLowerCase().includes(term) ||
+                   (log.data && JSON.stringify(log.data).toLowerCase().includes(term));
+        }
+
+        function renderLog(log) {
+            const container = document.getElementById('logsContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.dataset.level = log.level;
+            entry.dataset.id = log.id;
+
+            const time = new Date(log.timestamp).toLocaleTimeString();
+
+            let dataStr = '';
+            if (log.data) {
+                try {
+                    dataStr = '<br><span style="color: #6b7280; margin-left: 180px;">' +
+                             JSON.stringify(log.data, null, 2) + '</span>';
+                } catch (e) {
+                    dataStr = '';
+                }
+            }
+
+            entry.innerHTML = `
+                <span class="log-timestamp">${time}</span>
+                <span class="log-level log-level-${log.level}">${log.level.toUpperCase()}</span>
+                <span class="log-source">[${log.source}]</span>
+                <span class="log-message">${escapeHtml(log.message)}</span>
+                ${dataStr}
+            `;
+
+            container.appendChild(entry);
+
+            // Limit to 1000 logs
+            if (container.children.length > 1000) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateStats() {
+            document.getElementById('totalLogs').textContent = stats.total;
+            document.getElementById('errorCount').textContent = stats.errors;
+            document.getElementById('warnCount').textContent = stats.warnings;
+        }
+
+        function filterLogs(level) {
+            currentFilter = level;
+
+            // Update button styles
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.level === level);
+            });
+
+            // Re-render logs
+            rerenderLogs();
+        }
+
+        function searchLogs(term) {
+            searchTerm = term;
+            rerenderLogs();
+        }
+
+        function rerenderLogs() {
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = '';
+
+            logs.forEach(log => {
+                if (shouldShowLog(log)) {
+                    renderLog(log);
+                }
+            });
+
+            if (autoscroll) {
+                scrollToBottom();
+            }
+        }
+
+        function clearLogs() {
+            if (!confirm('Clear all logs?')) return;
+
+            logs = [];
+            stats = { total: 0, errors: 0, warnings: 0 };
+            document.getElementById('logsContainer').innerHTML = '';
+            updateStats();
+        }
+
+        function exportLogs() {
+            const data = JSON.stringify(logs, null, 2);
+
+            // Save to server logs directory
+            fetch('/api/logs/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    logs: logs,
+                    timestamp: Date.now()
+                })
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
+                    alert(`Logs saved to: logs/${result.filename}`);
+                }
+            }).catch(err => {
+                alert('Failed to save logs: ' + err.message);
+            });
+        }
+
+        function toggleAutoscroll(enabled) {
+            autoscroll = enabled;
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('logsContainer');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Initialize
+        initSocket();
+        addLog('System', 'success', 'Log viewer initialized');
+
+        // Capture console logs
+        const originalConsole = {
+            log: console.log,
+            warn: console.warn,
+            error: console.error,
+            info: console.info
+        };
+
+        console.log = function(...args) {
+            originalConsole.log.apply(console, args);
+            addLog('Console', 'info', args.join(' '));
+        };
+
+        console.warn = function(...args) {
+            originalConsole.warn.apply(console, args);
+            addLog('Console', 'warn', args.join(' '));
+        };
+
+        console.error = function(...args) {
+            originalConsole.error.apply(console, args);
+            addLog('Console', 'error', args.join(' '));
+        };
+
+        console.info = function(...args) {
+            originalConsole.info.apply(console, args);
+            addLog('Console', 'info', args.join(' '));
+        };
+    </script>
+</body>
+</html>

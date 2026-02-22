@@ -8,6 +8,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
+        body, html {
+            overflow: hidden;
+        }
+
         .node {
             position: absolute;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -18,6 +22,7 @@
             cursor: move;
             transition: transform 0.2s, box-shadow 0.2s;
             border: 2px solid rgba(255,255,255,0.1);
+            z-index: 10;
         }
         
         .node:hover {
@@ -77,17 +82,11 @@
             fill: none;
             pointer-events: none;
             filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.4));
+            z-index: 50;
         }
         
         .connection.animated {
-            stroke-dasharray: 5, 5;
-            animation: flow 1s linear infinite;
-        }
-        
-        @keyframes flow {
-            to {
-                stroke-dashoffset: -10;
-            }
+            /* Removed animation for performance */
         }
         
         .palette-item {
@@ -218,9 +217,13 @@
                 <button onclick="clearCanvas()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">
                     <i class="fas fa-trash mr-2"></i>Clear
                 </button>
-                <button onclick="loadDefaultAutoClickerWorkflow()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">
-                    <i class="fas fa-mouse-pointer mr-2"></i>Auto-Clicker
-                </button>
+                <select onchange="loadTemplate(this.value)" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors cursor-pointer">
+                    <option value="">Templates...</option>
+                    <option value="auto-clicker">Auto-Clicker</option>
+                    <option value="web-scraper">Web Scraper</option>
+                    <option value="file-processor">File Processor</option>
+                    <option value="api-monitor">API Monitor</option>
+                </select>
                 <div class="border-l border-gray-600 mx-2"></div>
                 <button onclick="undo()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">
                     <i class="fas fa-undo mr-2"></i>Undo
@@ -237,6 +240,9 @@
                 </button>
                 <button onclick="importPythonFile()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
                     <i class="fas fa-file-code mr-2"></i>Import Python
+                </button>
+                <button onclick="exportToLLM()" class="px-4 py-2 bg-pink-600 hover:bg-pink-700 rounded-lg transition-colors">
+                    <i class="fas fa-robot mr-2"></i>Export to LLM
                 </button>
             </div>
         </div>
@@ -275,14 +281,14 @@
         <!-- Canvas -->
         <div class="flex-1 relative canvas" id="canvas">
             <div class="grid-pattern"></div>
-            <svg id="connectionLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+            <div id="nodeLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;"></div>
+            <svg id="connectionLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50;">
                 <defs>
                     <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
                     </marker>
                 </defs>
             </svg>
-            <div id="nodeLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
             
             <!-- Minimap -->
             <div class="minimap">
@@ -915,7 +921,7 @@
                     node.y = e.clientY - startY;
                     nodeElement.style.left = node.x + 'px';
                     nodeElement.style.top = node.y + 'px';
-                    updateConnections();
+                    requestAnimationFrame(() => updateConnections());
                 };
                 
                 const handleMouseUp = () => {
@@ -957,16 +963,21 @@
             updateTempConnection(e.clientX, e.clientY);
         }
 
+        let rafId = null;
         function updateTempConnection(x, y) {
             if (!tempConnection || !connectionStart) return;
-            
-            const canvas = document.getElementById('canvas');
-            const rect = canvas.getBoundingClientRect();
-            const endX = x - rect.left;
-            const endY = y - rect.top;
-            
-            const path = `M ${connectionStart.x} ${connectionStart.y} Q ${(connectionStart.x + endX) / 2} ${(connectionStart.y + endY) / 2 - 50} ${endX} ${endY}`;
-            tempConnection.setAttribute('d', path);
+
+            if (rafId) return; // Skip if already queued
+            rafId = requestAnimationFrame(() => {
+                const canvas = document.getElementById('canvas');
+                const rect = canvas.getBoundingClientRect();
+                const endX = x - rect.left;
+                const endY = y - rect.top;
+
+                const path = `M ${connectionStart.x} ${connectionStart.y} Q ${(connectionStart.x + endX) / 2} ${(connectionStart.y + endY) / 2 - 50} ${endX} ${endY}`;
+                tempConnection.setAttribute('d', path);
+                rafId = null;
+            });
         }
 
         function handleConnectionEnd(e) {
@@ -1383,6 +1394,83 @@
             console.log('✅ Auto-clicker workflow loaded successfully');
         }
 
+        // Load workflow template
+        function loadTemplate(templateName) {
+            if (!templateName) return;
+
+            saveState();
+
+            switch(templateName) {
+                case 'auto-clicker':
+                    loadDefaultAutoClickerWorkflow();
+                    break;
+
+                case 'web-scraper':
+                    nodes = [
+                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
+                        { id: 'node_2', type: 'HTTP Request', category: 'Network', x: 300, y: 100, inputs: [{ name: 'url', type: 'string', value: 'https://example.com' }, { name: 'options', type: 'object', value: '' }], outputs: [{ name: 'response', type: 'object' }, { name: 'error', type: 'error' }], config: { method: 'GET', url: 'https://example.com' } },
+                        { id: 'node_3', type: 'Parse Text', category: 'Data Processing', x: 550, y: 100, inputs: [{ name: 'text', type: 'string', value: '' }, { name: 'pattern', type: 'string', value: '' }], outputs: [{ name: 'result', type: 'any' }], config: {} },
+                        { id: 'node_4', type: 'Write Log', category: 'Logging', x: 800, y: 100, inputs: [{ name: 'message', type: 'string', value: '' }], outputs: [{ name: 'done', type: 'flow' }], config: {} },
+                        { id: 'node_5', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
+                    ];
+                    connections = [
+                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
+                        { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
+                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
+                        { id: 'connection_4', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_5', portIndex: 0 } }
+                    ];
+                    nodeIdCounter = 6;
+                    connectionIdCounter = 5;
+                    break;
+
+                case 'file-processor':
+                    nodes = [
+                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
+                        { id: 'node_2', type: 'List Directory', category: 'File System', x: 300, y: 100, inputs: [{ name: 'path', type: 'string', value: './' }], outputs: [{ name: 'files', type: 'array' }], config: { path: './' } },
+                        { id: 'node_3', type: 'Loop', category: 'Control Flow', x: 550, y: 100, inputs: [{ name: 'input', type: 'flow', value: '' }, { name: 'loop_body', type: 'flow', value: '' }], outputs: [{ name: 'item', type: 'any' }, { name: 'loop_complete', type: 'flow' }], config: { loopType: 'for', maxIterations: 1000 } },
+                        { id: 'node_4', type: 'Read File', category: 'File System', x: 800, y: 100, inputs: [{ name: 'path', type: 'string', value: '' }], outputs: [{ name: 'content', type: 'string' }, { name: 'error', type: 'error' }], config: {} },
+                        { id: 'node_5', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
+                    ];
+                    connections = [
+                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
+                        { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
+                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
+                        { id: 'connection_4', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_5', portIndex: 0 } }
+                    ];
+                    nodeIdCounter = 6;
+                    connectionIdCounter = 5;
+                    break;
+
+                case 'api-monitor':
+                    nodes = [
+                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
+                        { id: 'node_2', type: 'Loop', category: 'Control Flow', x: 300, y: 100, inputs: [{ name: 'input', type: 'flow', value: '' }, { name: 'loop_body', type: 'flow', value: '' }], outputs: [{ name: 'item', type: 'any' }, { name: 'loop_complete', type: 'flow' }], config: { loopType: 'while', maxIterations: 1000 } },
+                        { id: 'node_3', type: 'HTTP Request', category: 'Network', x: 550, y: 50, inputs: [{ name: 'url', type: 'string', value: 'http://localhost:3001/api/status' }, { name: 'options', type: 'object', value: '' }], outputs: [{ name: 'response', type: 'object' }, { name: 'error', type: 'error' }], config: { method: 'GET', url: 'http://localhost:3001/api/status' } },
+                        { id: 'node_4', type: 'Delay', category: 'Control Flow', x: 800, y: 50, inputs: [{ name: 'duration', type: 'number', value: '5000' }], outputs: [{ name: 'done', type: 'flow' }], config: { duration: 5000 } },
+                        { id: 'node_5', type: 'Write Log', category: 'Logging', x: 550, y: 150, inputs: [{ name: 'message', type: 'string', value: '' }], outputs: [{ name: 'done', type: 'flow' }], config: {} },
+                        { id: 'node_6', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
+                    ];
+                    connections = [
+                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
+                        { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
+                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
+                        { id: 'connection_4', from: { nodeId: 'node_3', portIndex: 1 }, to: { nodeId: 'node_5', portIndex: 0 } },
+                        { id: 'connection_5', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
+                        { id: 'connection_6', from: { nodeId: 'node_5', portIndex: 0 }, to: { nodeId: 'node_6', portIndex: 0 } }
+                    ];
+                    nodeIdCounter = 7;
+                    connectionIdCounter = 7;
+                    break;
+            }
+
+            renderWorkflow();
+            updateStats();
+            showNotification('Template Loaded', `${templateName} template loaded`, 'success');
+
+            // Reset dropdown
+            event.target.value = '';
+        }
+
         // Import Python file
         function importPythonFile() {
             const input = document.createElement('input');
@@ -1447,79 +1535,48 @@
                 nodes: [],
                 connections: []
             };
-            
-            // Extract functions from Python code
-            const functionRegex = /def\s+(\w+)\s*\([^)]*\)\s*:/g;
-            const functions = [];
-            let match;
-            
-            while ((match = functionRegex.exec(pythonCode)) !== null) {
-                functions.push({
-                    name: match[1],
-                    startIndex: match.index
-                });
-            }
-            
-            if (functions.length === 0) {
+
+            // Parse Python code into logical blocks
+            const blocks = parsePythonBlocks(pythonCode);
+
+            if (blocks.length === 0) {
+                alert('No code blocks found in Python file');
                 return workflow;
             }
             
             // Add Start node
+            const startNodeId = `node_${nodeIdCounter++}`;
             workflow.nodes.push({
-                id: `node_${nodeIdCounter++}`,
+                id: startNodeId,
                 type: 'Start',
                 category: 'Control Flow',
                 x: 50,
                 y: 150,
                 inputs: [],
-                outputs: ['main'],
+                outputs: [{ name: 'main', type: 'flow' }],
                 config: {}
             });
-            
-            // Add Python nodes for each function
-            let currentX = 250;
+
+            let currentX = 300;
             let currentY = 150;
-            let previousNodeId = workflow.nodes[0].id;
-            
-            functions.forEach((func, index) => {
-                // Extract function code
-                const nextIndex = index < functions.length - 1 ? functions[index + 1].startIndex : pythonCode.length;
-                const functionCode = pythonCode.substring(func.startIndex, nextIndex).trim();
-                
-                // Create Python node
+            let previousNodeId = startNodeId;
+
+            // Convert each block to a node
+            blocks.forEach((block, index) => {
                 const nodeId = `node_${nodeIdCounter++}`;
-                workflow.nodes.push({
-                    id: nodeId,
-                    type: 'Execute Python',
-                    category: 'Python',
-                    x: currentX,
-                    y: currentY,
-                    inputs: ['code', 'args'],
-                    outputs: ['result', 'error'],
-                    config: {
-                        code: functionCode,
-                        timeout: 30,
-                        captureOutput: true
-                    }
+                const node = createNodeFromBlock(block, nodeId, currentX, currentY);
+
+                workflow.nodes.push(node);
+
+                // Connect to previous node
+                workflow.connections.push({
+                    id: `connection_${connectionIdCounter++}`,
+                    from: { nodeId: previousNodeId, portIndex: 0 },
+                    to: { nodeId: nodeId, portIndex: 0 }
                 });
-                
-                // Add connection from previous node
-                if (previousNodeId) {
-                    workflow.connections.push({
-                        id: `connection_${connectionIdCounter++}`,
-                        from: { nodeId: previousNodeId, portIndex: 0 },
-                        to: { nodeId: nodeId, portIndex: 0 }
-                    });
-                }
-                
+
                 previousNodeId = nodeId;
-                currentX += 200;
-                
-                // Add some vertical spacing for readability
-                if (currentX > 800) {
-                    currentX = 250;
-                    currentY += 150;
-                }
+                currentY += 120;
             });
             
             // Add End node
@@ -1530,21 +1587,277 @@
                 category: 'Control Flow',
                 x: currentX,
                 y: currentY,
-                inputs: ['main'],
+                inputs: [{ name: 'main', type: 'flow', value: '' }],
                 outputs: [],
                 config: {}
             });
-            
-            // Connect last function to End node
-            if (previousNodeId) {
-                workflow.connections.push({
-                    id: `connection_${connectionIdCounter++}`,
-                    from: { nodeId: previousNodeId, portIndex: 0 },
-                    to: { nodeId: endNodeId, portIndex: 0 }
+
+            workflow.connections.push({
+                id: `connection_${connectionIdCounter++}`,
+                from: { nodeId: previousNodeId, portIndex: 0 },
+                to: { nodeId: endNodeId, portIndex: 0 }
+            });
+
+            return workflow;
+        }
+
+        // Parse Python code into blocks
+        function parsePythonBlocks(code) {
+            const blocks = [];
+            const lines = code.split('\n');
+
+            // Detect HTTP requests
+            if (code.includes('requests.get') || code.includes('requests.post')) {
+                const urlMatch = code.match(/requests\.(get|post)\s*\(\s*['"](.*?)['"]/);
+                if (urlMatch) {
+                    blocks.push({
+                        type: 'http',
+                        method: urlMatch[1].toUpperCase(),
+                        url: urlMatch[2],
+                        code: code
+                    });
+                }
+            }
+
+            // Detect file operations
+            if (code.includes('open(') || code.includes('Path(')) {
+                const fileMatch = code.match(/open\s*\(\s*['"](.*?)['"]/);
+                if (fileMatch) {
+                    blocks.push({
+                        type: 'file',
+                        path: fileMatch[1],
+                        code: code
+                    });
+                }
+            }
+
+            // Detect loops
+            if (code.includes('for ') || code.includes('while ')) {
+                blocks.push({
+                    type: 'loop',
+                    code: code
                 });
             }
-            
-            return workflow;
+
+            // Detect time.sleep
+            if (code.includes('time.sleep') || code.includes('sleep(')) {
+                const sleepMatch = code.match(/sleep\s*\(\s*(\d+(?:\.\d+)?)/);
+                if (sleepMatch) {
+                    blocks.push({
+                        type: 'delay',
+                        duration: parseFloat(sleepMatch[1]) * 1000,
+                        code: code
+                    });
+                }
+            }
+
+            // If no specific patterns, treat as Python execution
+            if (blocks.length === 0) {
+                // Split by functions
+                const funcMatches = [...code.matchAll(/def\s+(\w+)\s*\([^)]*\)\s*:/g)];
+                if (funcMatches.length > 0) {
+                    funcMatches.forEach((match, idx) => {
+                        const startIdx = match.index;
+                        const endIdx = idx < funcMatches.length - 1 ? funcMatches[idx + 1].index : code.length;
+                        const funcCode = code.substring(startIdx, endIdx).trim();
+                        blocks.push({
+                            type: 'python',
+                            name: match[1],
+                            code: funcCode
+                        });
+                    });
+                } else {
+                    // Single code block
+                    blocks.push({
+                        type: 'python',
+                        code: code
+                    });
+                }
+            }
+
+            return blocks;
+        }
+
+        // Create node from parsed block
+        function createNodeFromBlock(block, nodeId, x, y) {
+            switch (block.type) {
+                case 'http':
+                    return {
+                        id: nodeId,
+                        type: 'HTTP Request',
+                        category: 'Network',
+                        x, y,
+                        inputs: [
+                            { name: 'url', type: 'string', value: block.url },
+                            { name: 'options', type: 'object', value: '' }
+                        ],
+                        outputs: [
+                            { name: 'response', type: 'object' },
+                            { name: 'error', type: 'error' }
+                        ],
+                        config: {
+                            method: block.method,
+                            url: block.url
+                        }
+                    };
+
+                case 'file':
+                    return {
+                        id: nodeId,
+                        type: 'Read File',
+                        category: 'File System',
+                        x, y,
+                        inputs: [
+                            { name: 'path', type: 'string', value: block.path }
+                        ],
+                        outputs: [
+                            { name: 'content', type: 'string' },
+                            { name: 'error', type: 'error' }
+                        ],
+                        config: {
+                            path: block.path
+                        }
+                    };
+
+                case 'loop':
+                    return {
+                        id: nodeId,
+                        type: 'Loop',
+                        category: 'Control Flow',
+                        x, y,
+                        inputs: [
+                            { name: 'input', type: 'flow', value: '' },
+                            { name: 'loop_body', type: 'flow', value: '' }
+                        ],
+                        outputs: [
+                            { name: 'item', type: 'any' },
+                            { name: 'loop_complete', type: 'flow' }
+                        ],
+                        config: {
+                            loopType: 'while',
+                            maxIterations: 1000
+                        }
+                    };
+
+                case 'delay':
+                    return {
+                        id: nodeId,
+                        type: 'Delay',
+                        category: 'Control Flow',
+                        x, y,
+                        inputs: [
+                            { name: 'duration', type: 'number', value: block.duration.toString() }
+                        ],
+                        outputs: [
+                            { name: 'done', type: 'flow' }
+                        ],
+                        config: {
+                            duration: block.duration
+                        }
+                    };
+
+                case 'python':
+                default:
+                    return {
+                        id: nodeId,
+                        type: 'Execute Python',
+                        category: 'Python',
+                        x, y,
+                        inputs: [
+                            { name: 'code', type: 'string', value: '' },
+                            { name: 'args', type: 'object', value: '' }
+                        ],
+                        outputs: [
+                            { name: 'result', type: 'any' },
+                            { name: 'error', type: 'error' }
+                        ],
+                        config: {
+                            code: block.code,
+                            timeout: 30,
+                            captureOutput: true
+                        }
+                    };
+            }
+        }
+
+        // Export workflow to LLM prompt
+        function exportToLLM() {
+            if (nodes.length === 0) {
+                alert('No workflow to export!');
+                return;
+            }
+
+            // Build workflow description
+            let prompt = `# Workflow Export for Code Generation\n\n`;
+            prompt += `## Workflow Overview\n`;
+            prompt += `- Total Nodes: ${nodes.length}\n`;
+            prompt += `- Total Connections: ${connections.length}\n\n`;
+
+            prompt += `## Workflow Structure\n\n`;
+
+            // List all nodes
+            nodes.forEach((node, idx) => {
+                prompt += `### Node ${idx + 1}: ${node.type} (${node.id})\n`;
+                prompt += `- Category: ${node.category}\n`;
+
+                if (node.inputs && node.inputs.length > 0) {
+                    prompt += `- Inputs:\n`;
+                    node.inputs.forEach(input => {
+                        prompt += `  - ${input.name} (${input.type}): ${input.value || 'empty'}\n`;
+                    });
+                }
+
+                if (node.outputs && node.outputs.length > 0) {
+                    prompt += `- Outputs: ${node.outputs.map(o => o.name).join(', ')}\n`;
+                }
+
+                if (node.config && Object.keys(node.config).length > 0) {
+                    prompt += `- Config: ${JSON.stringify(node.config, null, 2)}\n`;
+                }
+
+                prompt += `\n`;
+            });
+
+            prompt += `## Connections\n\n`;
+            connections.forEach((conn, idx) => {
+                const fromNode = nodes.find(n => n.id === conn.from.nodeId);
+                const toNode = nodes.find(n => n.id === conn.to.nodeId);
+                prompt += `${idx + 1}. ${fromNode?.type} (${conn.from.nodeId}) → ${toNode?.type} (${conn.to.nodeId})\n`;
+            });
+
+            prompt += `\n## Task\n\n`;
+            prompt += `Generate a Python script that implements this workflow. The script should:\n`;
+            prompt += `1. Execute each node in the correct order based on connections\n`;
+            prompt += `2. Handle errors gracefully\n`;
+            prompt += `3. Log execution progress\n`;
+            prompt += `4. Include comments explaining each step\n`;
+            prompt += `5. Use the node configurations and input values shown above\n\n`;
+            prompt += `The generated code should be structured so it can be imported back into this visual editor.\n`;
+
+            // Copy to clipboard
+            navigator.clipboard.writeText(prompt).then(() => {
+                showNotification('Export to LLM', 'Workflow prompt copied to clipboard!', 'success');
+            }).catch(() => {
+                showNotification('Export to LLM', 'Failed to copy to clipboard', 'error');
+            });
+
+            // Also save to server logs directory
+            fetch('/api/workflows/export-llm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    timestamp: Date.now(),
+                    nodeCount: nodes.length,
+                    connectionCount: connections.length
+                })
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
+                    console.log('Saved to:', result.path);
+                }
+            }).catch(err => {
+                console.error('Failed to save to server:', err);
+            });
         }
 
         // Update node position
@@ -1573,6 +1886,10 @@
                     case 'o':
                         e.preventDefault();
                         loadWorkflow();
+                        break;
+                    case 'e':
+                        e.preventDefault();
+                        exportToLLM();
                         break;
                     case 'r':
                         e.preventDefault();

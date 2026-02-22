@@ -218,7 +218,7 @@ class ErrorLogger {
             nodeEditorState: this.captureNodeEditorState(),
             serverStatus: this.captureServerStatus(),
             errors: this.errors,
-            logs: this.logs.slice(-50), // Last 50 logs
+            logs: this.logs.slice(-50),
             summary: {
                 totalErrors: this.errors.length,
                 totalLogs: this.logs.length,
@@ -235,14 +235,15 @@ class ErrorLogger {
         };
 
         if (isBrowser) {
-            // Create downloadable file
-            const blob = new Blob([JSON.stringify(debugData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `runtime-logger-debug-${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
+            // Save to server logs directory
+            fetch('/api/logs/debug', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    debugData: debugData,
+                    timestamp: Date.now()
+                })
+            }).catch(err => console.error('Failed to save debug data:', err));
 
             // Also save to localStorage for persistence
             try {
@@ -286,35 +287,30 @@ if (typeof module !== 'undefined' && module.exports) {
 if (isBrowser) {
     window.errorLogger = new ErrorLogger();
 
-    // Auto-export on page unload
-    window.addEventListener('beforeunload', () => {
-        if (window.errorLogger.errors.length > 0) {
-            window.errorLogger.exportDebugData();
-        }
-    });
-
     // Export function for manual debugging
     window.exportDebugData = () => {
         return window.errorLogger.exportDebugData();
     };
 
-    // Add debug button to page
+    // Add debug button to page (bottom-left, small icon)
     document.addEventListener('DOMContentLoaded', () => {
         const debugButton = document.createElement('button');
-        debugButton.innerHTML = '🔍 Export Debug';
+        debugButton.innerHTML = '🔍';
+        debugButton.title = 'Export Debug Data';
         debugButton.style.cssText = `
             position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 9999;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
             background: #ff4444;
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px 12px;
+            border-radius: 50%;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 16px;
             font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         `;
         debugButton.onclick = () => window.exportDebugData();
         document.body.appendChild(debugButton);
