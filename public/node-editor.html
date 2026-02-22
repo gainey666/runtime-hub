@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runtime Logger - Node Editor</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        .node {
+            position: absolute;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 15px;
+            min-width: 200px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            cursor: move;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 2px solid rgba(255,255,255,0.1);
+        }
+        
+        .node:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+        }
+        
+        .node.selected {
+            border-color: #fbbf24;
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.4);
+        }
+        
+        .node-header {
+            font-weight: bold;
+            color: white;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .node-content {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 10px;
+            color: white;
+            font-size: 12px;
+        }
+        
+        .node-port {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #10b981;
+            border: 2px solid white;
+            position: absolute;
+            cursor: crosshair;
+            transition: all 0.2s;
+        }
+        
+        .node-port:hover {
+            transform: scale(1.3);
+            background: #34d399;
+        }
+        
+        .node-port.input {
+            left: -6px;
+        }
+        
+        .node-port.output {
+            right: -6px;
+        }
+        
+        .connection {
+            stroke: #10b981;
+            stroke-width: 3;
+            fill: none;
+            pointer-events: none;
+            filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.4));
+        }
+        
+        .connection.animated {
+            stroke-dasharray: 5, 5;
+            animation: flow 1s linear infinite;
+        }
+        
+        @keyframes flow {
+            to {
+                stroke-dashoffset: -10;
+            }
+        }
+        
+        .palette-item {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px;
+            cursor: grab;
+            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+        }
+        
+        .palette-item:hover {
+            transform: translateX(5px);
+            background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+            border-color: #10b981;
+        }
+        
+        .palette-item.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        
+        .canvas {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 119, 198, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(255, 219, 112, 0.1) 0%, transparent 50%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .grid-pattern {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+        }
+        
+        .category-header {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 10px 15px;
+            font-weight: bold;
+            border-radius: 8px 8px 0 0;
+            margin: 0 -8px;
+        }
+        
+        .minimap {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            background: rgba(0,0,0,0.8);
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .toolbar {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .status-bar {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Node execution highlighting */
+        .node-running {
+            border-color: #fbbf24 !important;
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.6) !important;
+            animation: pulse-running 1s infinite;
+        }
+
+        .node-completed {
+            border-color: #10b981 !important;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4) !important;
+        }
+
+        .node-error {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.6) !important;
+            animation: pulse-error 1s infinite;
+        }
+
+        @keyframes pulse-running {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+
+        @keyframes pulse-error {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+    <!-- Toolbar -->
+    <div class="toolbar p-3 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
+                <i class="fas fa-project-diagram mr-2"></i>Runtime Logger
+            </h1>
+            <div class="flex gap-2">
+                <button onclick="runWorkflow()" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
+                    <i class="fas fa-play mr-2"></i>Run
+                </button>
+                <button onclick="stopWorkflow()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+                    <i class="fas fa-stop mr-2"></i>Stop
+                </button>
+                <button onclick="saveWorkflow()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                    <i class="fas fa-save mr-2"></i>Save
+                </button>
+                <button onclick="loadWorkflow()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
+                    <i class="fas fa-folder-open mr-2"></i>Load
+                </button>
+                <button onclick="clearCanvas()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">
+                    <i class="fas fa-trash mr-2"></i>Clear
+                </button>
+                <button onclick="loadDefaultAutoClickerWorkflow()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">
+                    <i class="fas fa-mouse-pointer mr-2"></i>Auto-Clicker
+                </button>
+                <div class="border-l border-gray-600 mx-2"></div>
+                <button onclick="undo()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">
+                    <i class="fas fa-undo mr-2"></i>Undo
+                </button>
+                <button onclick="redo()" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg transition-colors">
+                    <i class="fas fa-redo mr-2"></i>Redo
+                </button>
+                <div class="border-l border-gray-600 mx-2"></div>
+                <button onclick="exportNodeLibrary()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                    <i class="fas fa-download mr-2"></i>Export Nodes
+                </button>
+                <button onclick="importNodeLibrary()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors">
+                    <i class="fas fa-upload mr-2"></i>Import Nodes
+                </button>
+                <button onclick="importPythonFile()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
+                    <i class="fas fa-file-code mr-2"></i>Import Python
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="text-sm">
+                <span class="text-gray-400">Nodes:</span>
+                <span id="nodeCount" class="text-green-400 font-bold">0</span>
+            </div>
+            <div class="text-sm">
+                <span class="text-gray-400">Connections:</span>
+                <span id="connectionCount" class="text-blue-400 font-bold">0</span>
+            </div>
+            <div class="text-sm">
+                <span class="text-gray-400">Status:</span>
+                <span id="workflowStatus" class="text-yellow-400 font-bold">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex">
+        <!-- Node Palette -->
+        <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-lg font-bold mb-4 text-green-400">
+                    <i class="fas fa-shapes mr-2"></i>Node Palette
+                </h2>
+                <input type="text" id="searchNodes" placeholder="Search nodes..." 
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400">
+            </div>
+            <div class="flex-1 overflow-y-auto p-4" id="nodePalette">
+                <!-- Nodes will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="flex-1 relative canvas" id="canvas">
+            <div class="grid-pattern"></div>
+            <svg id="connectionLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
+                    </marker>
+                </defs>
+            </svg>
+            <div id="nodeLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+            
+            <!-- Minimap -->
+            <div class="minimap">
+                <svg id="minimapSvg" style="width: 100%; height: 100%;"></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar p-2 flex items-center justify-between text-sm">
+        <div class="flex items-center gap-4">
+            <span class="text-gray-400">Runtime Logger v1.0</span>
+            <span id="connectionStatus" class="text-yellow-400">
+                <i class="fas fa-circle mr-1"></i>Connecting...
+            </span>
+        </div>
+        <div class="flex items-center gap-4">
+            <span id="mousePosition" class="text-gray-400">X: 0, Y: 0</span>
+            <span id="selectedNode" class="text-gray-400">No selection</span>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="error-logger.js"></script>
+    <script src="node-library.js"></script>
+    <script>
+        // Global variables
+        let socket;
+        let nodes = [];
+        let connections = [];
+        let selectedNode = null;
+        let draggedNode = null;
+        let isConnecting = false;
+        let connectionStart = null;
+        let tempConnection = null;
+        let nodeIdCounter = 1;
+        let connectionIdCounter = 1;
+        let currentWorkflowId = null;
+
+        // Configuration constants (remove magic values)
+        const CONFIG = {
+            NODE_WIDTH: 200,
+            NODE_HEIGHT: 60,
+            PORT_SIZE: 12,
+            GRID_SNAP: 20,
+            CONNECTION_CURVE_OFFSET: 50,
+            NOTIFICATION_DURATION: 5000,
+            ANIMATION_DURATION: 300,
+            MAX_NODES: 100,
+            MAX_CONNECTIONS: 200,
+            WORKFLOW_TIMEOUT: 60000,
+            PYTHON_EXECUTION_TIMEOUT: 30000
+        };
+
+        // Undo/Redo functionality
+        const undoStack = [];
+        const redoStack = [];
+        const MAX_UNDO_STACK_SIZE = 50;
+
+        function saveState() {
+            const state = {
+                nodes: JSON.parse(JSON.stringify(nodes)),
+                connections: JSON.parse(JSON.stringify(connections)),
+                nodeIdCounter: nodeIdCounter,
+                connectionIdCounter: connectionIdCounter
+            };
+            
+            undoStack.push(state);
+            redoStack.length = 0; // Clear redo stack on new action
+            
+            // Limit stack size
+            if (undoStack.length > MAX_UNDO_STACK_SIZE) {
+                undoStack.shift();
+            }
+            
+            updateStats();
+        }
+
+        function undo() {
+            if (undoStack.length > 0) {
+                // Save current state to redo stack
+                redoStack.push({
+                    nodes: JSON.parse(JSON.stringify(nodes)),
+                    connections: JSON.parse(JSON.stringify(connections)),
+                    nodeIdCounter: nodeIdCounter,
+                    connectionIdCounter: connectionIdCounter
+                });
+                
+                // Restore previous state
+                const state = undoStack.pop();
+                nodes = state.nodes;
+                connections = state.connections;
+                nodeIdCounter = state.nodeIdCounter;
+                connectionIdCounter = state.connectionIdCounter;
+                
+                // Re-render workflow
+                renderWorkflow();
+                updateStats();
+                
+                showNotification('Undo', 'Previous state restored', 'info');
+            }
+        }
+
+        function redo() {
+            if (redoStack.length > 0) {
+                // Save current state to undo stack
+                undoStack.push({
+                    nodes: JSON.parse(JSON.stringify(nodes)),
+                    connections: JSON.parse(JSON.stringify(connections)),
+                    nodeIdCounter: nodeIdCounter,
+                    connectionIdCounter: connectionIdCounter
+                });
+                
+                // Restore next state
+                const state = redoStack.pop();
+                nodes = state.nodes;
+                connections = state.connections;
+                nodeIdCounter = state.nodeIdCounter;
+                connectionIdCounter = state.connectionIdCounter;
+                
+                // Re-render workflow
+                renderWorkflow();
+                updateStats();
+                
+                showNotification('Redo', 'Next state restored', 'info');
+            }
+        }
+
+        function renderWorkflow() {
+            console.log('📊 renderWorkflow() called - nodes:', nodes.length, 'connections:', connections.length);
+
+            // Clear current rendering
+            const nodeLayer = document.getElementById('nodeLayer');
+            const connectionLayer = document.getElementById('connectionLayer');
+
+            if (!nodeLayer) {
+                console.error('❌ nodeLayer element not found!');
+                return;
+            }
+            if (!connectionLayer) {
+                console.error('❌ connectionLayer element not found!');
+                return;
+            }
+
+            nodeLayer.innerHTML = '';
+            connectionLayer.innerHTML = `
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
+                    </marker>
+                </defs>
+            `;
+
+            // Re-render nodes
+            console.log('🎨 Rendering', nodes.length, 'nodes...');
+            nodes.forEach(node => renderNode(node));
+
+            // Re-render connections
+            console.log('🔗 Rendering', connections.length, 'connections...');
+            connections.forEach(conn => renderConnection(conn));
+
+            console.log('✅ renderWorkflow() complete');
+        }
+
+        // Initialize socket connection
+        function initSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle mr-1 text-green-400"></i>Connected';
+                document.getElementById('workflowStatus').textContent = 'Ready';
+            });
+            
+            socket.on('disconnect', () => {
+                document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle mr-1 text-red-400"></i>Disconnected';
+                document.getElementById('workflowStatus').textContent = 'Offline';
+            });
+            
+            // Workflow execution updates
+            socket.on('workflow_update', (data) => {
+                console.log('Workflow update:', data);
+                if (data.workflowId === currentWorkflowId) {
+                    handleWorkflowUpdate(data);
+                }
+            });
+            
+            // Node execution updates
+            socket.on('node_update', (data) => {
+                console.log('Node update:', data);
+                if (data.workflowId === currentWorkflowId) {
+                    handleNodeUpdate(data);
+                }
+            });
+            
+            // Notifications
+            socket.on('notification', (data) => {
+                console.log('Notification:', data);
+                showNotification(data.title, data.message, data.type);
+            });
+            socket.on('python_data', (data) => {
+                console.log('Python data received:', data);
+                // Handle live Python monitoring data
+            });
+        }
+
+        // Initialize node palette
+        function initPalette() {
+            try {
+                const palette = document.getElementById('nodePalette');
+                const searchTerm = document.getElementById('searchNodes').value.toLowerCase();
+                
+                palette.innerHTML = '';
+                
+                // Check if NODE_LIBRARY is available
+                if (typeof NODE_LIBRARY === 'undefined') {
+                    throw new Error('NODE_LIBRARY is not defined. Check if node-library.js loaded properly.');
+                }
+                
+                // Group nodes by category
+                const categories = {};
+                NODE_LIBRARY.forEach(node => {
+                    if (!categories[node.category]) {
+                        categories[node.category] = [];
+                    }
+                    if (node.name.toLowerCase().includes(searchTerm) || 
+                        node.description.toLowerCase().includes(searchTerm)) {
+                        categories[node.category].push(node);
+                    }
+                });
+                
+                // Render categories
+                Object.entries(categories).forEach(([category, categoryNodes]) => {
+                    if (categoryNodes.length === 0) return;
+                    
+                    const categoryDiv = document.createElement('div');
+                    categoryDiv.className = 'mb-4';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'category-header';
+                    header.innerHTML = `<i class="fas ${getCategoryIcon(category)} mr-2"></i>${category}`;
+                    categoryDiv.appendChild(header);
+                    
+                    categoryNodes.forEach(node => {
+                        const item = document.createElement('div');
+                        item.className = 'palette-item';
+                        item.draggable = true;
+                        item.innerHTML = `
+                            <div class="font-semibold">${node.name}</div>
+                            <div class="text-xs text-gray-400 mt-1">${node.description}</div>
+                            <div class="text-xs text-green-400 mt-1">
+                                <i class="fas fa-sign-in-alt mr-1"></i>${node.inputs.length} inputs / 
+                                <i class="fas fa-sign-out-alt mr-1"></i>${node.outputs.length} outputs
+                            </div>
+                        `;
+                        
+                        item.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.setData('nodeType', JSON.stringify(node));
+                            item.classList.add('dragging');
+                        });
+                        
+                        item.addEventListener('dragend', () => {
+                            item.classList.remove('dragging');
+                        });
+                        
+                        categoryDiv.appendChild(item);
+                    });
+                    
+                    palette.appendChild(categoryDiv);
+                });
+                
+                console.log(`✅ Node palette loaded: ${NODE_LIBRARY.length} nodes in ${Object.keys(categories).length} categories`);
+                
+            } catch (error) {
+                console.error('❌ Failed to initialize node palette:', error);
+                window.errorLogger.logError('Node Palette Initialization Failed', {
+                    error: error.message,
+                    stack: error.stack,
+                    nodeLibraryDefined: typeof NODE_LIBRARY !== 'undefined',
+                    nodeLibraryLength: typeof NODE_LIBRARY !== 'undefined' ? NODE_LIBRARY.length : 0
+                });
+            }
+        }
+
+        // Get category icon
+        function getCategoryIcon(category) {
+            const icons = {
+                'Control Flow': 'fa-project-diagram',
+                'Python': 'fa-python',
+                'File System': 'fa-folder',
+                'Windows System': 'fa-windows',
+                'Network': 'fa-globe',
+                'Data Processing': 'fa-cogs',
+                'Database': 'fa-database',
+                'Notification': 'fa-bell',
+                'Logging': 'fa-file-alt',
+                'Automation': 'fa-robot',
+                'Security': 'fa-shield-alt'
+            };
+            return icons[category] || 'fa-cube';
+        }
+
+        // Handle workflow updates
+        function handleWorkflowUpdate(data) {
+            const { status, workflowData } = data;
+            
+            switch (status) {
+                case 'running':
+                    document.getElementById('workflowStatus').textContent = 'Running';
+                    document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
+                    break;
+                case 'completed':
+                    document.getElementById('workflowStatus').textContent = 'Completed';
+                    document.getElementById('workflowStatus').className = 'text-blue-400 font-bold';
+                    clearNodeHighlights();
+                    break;
+                case 'error':
+                    document.getElementById('workflowStatus').textContent = 'Error';
+                    document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
+                    clearNodeHighlights();
+                    alert('Workflow execution failed: ' + (workflowData.error || 'Unknown error'));
+                    break;
+                case 'stopped':
+                    document.getElementById('workflowStatus').textContent = 'Stopped';
+                    document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
+                    clearNodeHighlights();
+                    break;
+            }
+        }
+
+        // Handle node execution updates
+        function handleNodeUpdate(data) {
+            const { nodeId, status, data: nodeData } = data;
+            const nodeElement = document.getElementById(nodeId);
+            
+            if (nodeElement) {
+                switch (status) {
+                    case 'running':
+                        highlightNode(nodeElement, 'running');
+                        break;
+                    case 'completed':
+                        highlightNode(nodeElement, 'completed');
+                        break;
+                    case 'error':
+                        highlightNode(nodeElement, 'error');
+                        console.error('Node execution error:', nodeData.error);
+                        break;
+                }
+            }
+        }
+
+        // Highlight node during execution
+        function highlightNode(nodeElement, status) {
+            // Remove all execution classes
+            nodeElement.classList.remove('node-running', 'node-completed', 'node-error');
+            
+            // Add appropriate class
+            switch (status) {
+                case 'running':
+                    nodeElement.classList.add('node-running');
+                    break;
+                case 'completed':
+                    nodeElement.classList.add('node-completed');
+                    break;
+                case 'error':
+                    nodeElement.classList.add('node-error');
+                    break;
+            }
+        }
+
+        // Clear all node highlights
+        function clearNodeHighlights() {
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('node-running', 'node-completed', 'node-error');
+            });
+        }
+
+        // Show notification
+        function updateStats() {
+            // Update node count
+            document.getElementById('nodeCount').textContent = nodes.length;
+
+            // Update connection count
+            document.getElementById('connectionCount').textContent = connections.length;
+        }
+
+        function showNotification(title, message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 max-w-sm transform transition-all duration-300 translate-x-full`;
+            
+            // Set color based on type
+            switch (type) {
+                case 'success':
+                    notification.classList.add('bg-green-600', 'text-white');
+                    break;
+                case 'error':
+                    notification.classList.add('bg-red-600', 'text-white');
+                    break;
+                case 'warning':
+                    notification.classList.add('bg-yellow-600', 'text-white');
+                    break;
+                default:
+                    notification.classList.add('bg-blue-600', 'text-white');
+            }
+            
+            notification.innerHTML = `
+                <div class="font-bold">${title}</div>
+                <div class="text-sm mt-1">${message}</div>
+                <button onclick="this.parentElement.remove()" class="absolute top-2 right-2 text-white hover:text-gray-200">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        // Listen for dynamic node updates
+        function setupNodeLibraryEvents() {
+            // Re-render palette when nodes are added/removed
+            window.addEventListener('nodeAdded', () => {
+                initPalette();
+            });
+            
+            window.addEventListener('nodeRemoved', () => {
+                initPalette();
+            });
+        }
+
+        // Add custom node dynamically
+        function addCustomNode(nodeDefinition) {
+            try {
+                const nodeLibrary = new NodeLibrary();
+                nodeLibrary.addNode(nodeDefinition);
+                
+                // Refresh NODE_LIBRARY array
+                window.NODE_LIBRARY = Array.from(nodeLibrary.nodeTypes.values());
+                
+                // Re-render palette
+                initPalette();
+                
+                console.log(`Custom node "${nodeDefinition.name}" added successfully`);
+                return true;
+            } catch (error) {
+                console.error('Failed to add custom node:', error.message);
+                return false;
+            }
+        }
+
+        // Remove node type dynamically
+        function removeCustomNode(nodeName) {
+            try {
+                const nodeLibrary = new NodeLibrary();
+                const success = nodeLibrary.removeNode(nodeName);
+                
+                if (success) {
+                    // Refresh NODE_LIBRARY array
+                    window.NODE_LIBRARY = Array.from(nodeLibrary.nodeTypes.values());
+                    
+                    // Re-render palette
+                    initPalette();
+                    
+                    console.log(`Node "${nodeName}" removed successfully`);
+                }
+                
+                return success;
+            } catch (error) {
+                console.error('Failed to remove node:', error.message);
+                return false;
+            }
+        }
+
+        // Export node library
+        function exportNodeLibrary() {
+            const nodeLibrary = new NodeLibrary();
+            const exportData = nodeLibrary.exportNodes();
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `node-library_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Import node library
+        function importNodeLibrary() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = (event) => {
+                    try {
+                        const importData = JSON.parse(event.target.result);
+                        const nodeLibrary = new NodeLibrary();
+                        const result = nodeLibrary.importNodes(importData);
+                        
+                        // Refresh NODE_LIBRARY array
+                        window.NODE_LIBRARY = Array.from(nodeLibrary.nodeTypes.values());
+                        
+                        // Re-render palette
+                        initPalette();
+                        
+                        alert(`Import complete: ${result.imported} nodes imported`);
+                    } catch (error) {
+                        alert('Failed to import node library: ' + error.message);
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+
+        // Get category icon
+        function getCategoryIcon(category) {
+            const icons = {
+                'Control Flow': 'fa-code-branch',
+                'Python': 'fa-python',
+                'File System': 'fa-folder',
+                'Windows System': 'fa-windows',
+                'Network': 'fa-network-wired',
+                'Data Processing': 'fa-database',
+                'Database': 'fa-server',
+                'Notification': 'fa-bell',
+                'Logging': 'fa-file-alt',
+                'Automation': 'fa-robot',
+                'Security': 'fa-shield-alt'
+            };
+            return icons[category] || 'fa-cube';
+        }
+
+        // Canvas drag and drop
+        function initCanvas() {
+            const canvas = document.getElementById('canvas');
+            const nodeLayer = document.getElementById('nodeLayer');
+            
+            canvas.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            
+            canvas.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const nodeType = JSON.parse(e.dataTransfer.getData('nodeType'));
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                createNode(nodeType, x, y);
+            });
+            
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.round(e.clientX - rect.left);
+                const y = Math.round(e.clientY - rect.top);
+                document.getElementById('mousePosition').textContent = `X: ${x}, Y: ${y}`;
+                
+                if (isConnecting && connectionStart) {
+                    updateTempConnection(x, y);
+                }
+            });
+            
+            canvas.addEventListener('click', (e) => {
+                if (e.target === canvas || e.target === nodeLayer) {
+                    deselectAllNodes();
+                }
+            });
+        }
+
+        // Create node
+        function createNode(nodeType, x, y) {
+            const node = {
+                id: `node_${nodeIdCounter++}`,
+                type: nodeType.name,
+                category: nodeType.category,
+                x: x - 100,
+                y: y - 50,
+                inputs: nodeType.inputs.map(input => ({
+                    name: typeof input === 'string' ? input : input.name,
+                    type: typeof input === 'string' ? 'any' : (input.type || 'any'),
+                    value: ''
+                })),
+                outputs: nodeType.outputs.map(output => ({
+                    name: typeof output === 'string' ? output : output.name,
+                    type: typeof output === 'string' ? 'any' : (output.type || 'any')
+                })),
+                config: nodeType.config || {}
+            };
+            
+            nodes.push(node);
+            renderNode(node);
+            updateStats();
+        }
+
+        // Render node
+        function renderNode(node) {
+            const nodeLayer = document.getElementById('nodeLayer');
+            const nodeElement = document.createElement('div');
+            nodeElement.className = 'node';
+            nodeElement.id = node.id;
+            nodeElement.style.left = node.x + 'px';
+            nodeElement.style.top = node.y + 'px';
+            
+            nodeElement.innerHTML = `
+                <div class="node-header">
+                    <i class="fas ${getCategoryIcon(node.category)}"></i>
+                    ${node.type}
+                </div>
+                <div class="node-content">
+                    ${node.inputs.map((input, index) => `
+                        <div class="mb-2">
+                            <label class="text-xs text-gray-300">${input.name}:</label>
+                            <input type="text" 
+                                class="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white mt-1"
+                                placeholder="${input.type}"
+                                value="${input.value || ''}"
+                                onchange="updateNodeInput('${node.id}', ${index}, this.value)">
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            // Add ports
+            node.inputs.forEach((input, index) => {
+                const port = document.createElement('div');
+                port.className = 'node-port input';
+                port.style.top = (60 + index * 35) + 'px';
+                port.dataset.nodeId = node.id;
+                port.dataset.portType = 'input';
+                port.dataset.portIndex = index;
+                
+                port.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    startConnection(node.id, 'input', index, e.clientX, e.clientY);
+                });
+                
+                nodeElement.appendChild(port);
+            });
+            
+            node.outputs.forEach((output, index) => {
+                const port = document.createElement('div');
+                port.className = 'node-port output';
+                port.style.top = (60 + index * 35) + 'px';
+                port.dataset.nodeId = node.id;
+                port.dataset.portType = 'output';
+                port.dataset.portIndex = index;
+                
+                port.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    startConnection(node.id, 'output', index, e.clientX, e.clientY);
+                });
+                
+                nodeElement.appendChild(port);
+            });
+            
+            // Make node draggable
+            nodeElement.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('node-port')) return;
+                
+                draggedNode = node;
+                const startX = e.clientX - node.x;
+                const startY = e.clientY - node.y;
+                
+                const handleMouseMove = (e) => {
+                    node.x = e.clientX - startX;
+                    node.y = e.clientY - startY;
+                    nodeElement.style.left = node.x + 'px';
+                    nodeElement.style.top = node.y + 'px';
+                    updateConnections();
+                };
+                
+                const handleMouseUp = () => {
+                    draggedNode = null;
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                };
+                
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
+            });
+            
+            nodeElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectNode(node);
+            });
+            
+            nodeLayer.appendChild(nodeElement);
+        }
+
+        // Connection handling
+        function startConnection(nodeId, portType, portIndex, x, y) {
+            isConnecting = true;
+            connectionStart = { nodeId, portType, portIndex, x, y };
+            
+            const svg = document.getElementById('connectionLayer');
+            tempConnection = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            tempConnection.classList.add('connection');
+            svg.appendChild(tempConnection);
+            
+            document.addEventListener('mouseup', handleConnectionEnd);
+        }
+
+        function updateTempConnection(x, y) {
+            if (!tempConnection || !connectionStart) return;
+            
+            const canvas = document.getElementById('canvas');
+            const rect = canvas.getBoundingClientRect();
+            const endX = x - rect.left;
+            const endY = y - rect.top;
+            
+            const path = `M ${connectionStart.x} ${connectionStart.y} Q ${(connectionStart.x + endX) / 2} ${(connectionStart.y + endY) / 2 - 50} ${endX} ${endY}`;
+            tempConnection.setAttribute('d', path);
+        }
+
+        function handleConnectionEnd(e) {
+            if (!isConnecting || !connectionStart) return;
+            
+            const target = e.target;
+            if (target.classList.contains('node-port')) {
+                const targetNodeId = target.dataset.nodeId;
+                const targetPortType = target.dataset.portType;
+                const targetPortIndex = parseInt(target.dataset.portIndex);
+                
+                // Validate connection (output to input only)
+                if (connectionStart.portType === 'output' && targetPortType === 'input') {
+                    createConnection(
+                        connectionStart.nodeId,
+                        connectionStart.portIndex,
+                        targetNodeId,
+                        targetPortIndex
+                    );
+                }
+            }
+            
+            // Clean up
+            if (tempConnection) {
+                tempConnection.remove();
+                tempConnection = null;
+            }
+            isConnecting = false;
+            connectionStart = null;
+            document.removeEventListener('mouseup', handleConnectionEnd);
+        }
+
+        function createConnection(fromNodeId, fromPortIndex, toNodeId, toPortIndex) {
+            const connection = {
+                id: `connection_${connectionIdCounter++}`,
+                from: { nodeId: fromNodeId, portIndex: fromPortIndex },
+                to: { nodeId: toNodeId, portIndex: toPortIndex }
+            };
+            
+            connections.push(connection);
+            renderConnection(connection);
+            updateStats();
+        }
+
+        function renderConnection(connection) {
+            const svg = document.getElementById('connectionLayer');
+            const fromNode = nodes.find(n => n.id === connection.from.nodeId);
+            const toNode = nodes.find(n => n.id === connection.to.nodeId);
+            
+            if (!fromNode || !toNode) return;
+            
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.classList.add('connection', 'animated');
+            path.id = connection.id;
+            path.setAttribute('marker-end', 'url(#arrowhead)');
+            
+            updateConnectionPath(path, fromNode, toNode, connection.from.portIndex, connection.to.portIndex);
+            svg.appendChild(path);
+        }
+
+        function updateConnectionPath(path, fromNode, toNode, fromPortIndex, toPortIndex) {
+            const fromX = fromNode.x + 200; // Node width
+            const fromY = fromNode.y + 60 + fromPortIndex * 35;
+            const toX = toNode.x;
+            const toY = toNode.y + 60 + toPortIndex * 35;
+            
+            const d = `M ${fromX} ${fromY} Q ${(fromX + toX) / 2} ${(fromY + toY) / 2 - 50} ${toX} ${toY}`;
+            path.setAttribute('d', d);
+        }
+
+        function updateConnections() {
+            connections.forEach(connection => {
+                const path = document.getElementById(connection.id);
+                const fromNode = nodes.find(n => n.id === connection.from.nodeId);
+                const toNode = nodes.find(n => n.id === connection.to.nodeId);
+                
+                if (path && fromNode && toNode) {
+                    updateConnectionPath(path, fromNode, toNode, connection.from.portIndex, connection.to.portIndex);
+                }
+            });
+        }
+
+        // Node selection
+        function selectNode(node) {
+            deselectAllNodes();
+            selectedNode = node;
+            document.getElementById(node.id).classList.add('selected');
+            document.getElementById('selectedNode').textContent = `Selected: ${node.type}`;
+        }
+
+        function deselectAllNodes() {
+            document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+            selectedNode = null;
+            document.getElementById('selectedNode').textContent = 'No selection';
+        }
+
+        // Update node input
+        function updateNodeInput(nodeId, inputIndex, value) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+                node.inputs[inputIndex].value = value;
+            }
+        }
+
+        // Workflow operations
+        async function runWorkflow() {
+            if (connections.length === 0) {
+                alert('No connections in workflow!');
+                return;
+            }
+            
+            try {
+                document.getElementById('workflowStatus').textContent = 'Starting...';
+                document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
+                
+                // Send workflow to server for execution
+                const response = await fetch('/api/workflows/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        nodes: nodes,
+                        connections: connections,
+                        autoClicker: true // Enable auto-clicker integration
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentWorkflowId = result.workflowId;
+                    document.getElementById('workflowStatus').textContent = 'Running';
+                    document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
+                    console.log('Workflow started:', result.workflowId);
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                console.error('Failed to start workflow:', error);
+                document.getElementById('workflowStatus').textContent = 'Error';
+                document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
+                alert('Failed to start workflow: ' + error.message);
+            }
+        }
+
+        async function stopWorkflow() {
+            if (!currentWorkflowId) {
+                alert('No workflow is currently running!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/workflows/${currentWorkflowId}/stop`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('workflowStatus').textContent = 'Stopped';
+                    document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
+                    currentWorkflowId = null;
+                    clearNodeHighlights();
+                    console.log('Workflow stopped');
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                console.error('Failed to stop workflow:', error);
+                alert('Failed to stop workflow: ' + error.message);
+            }
+        }
+
+        function saveWorkflow() {
+            const workflowData = {
+                name: prompt('Enter workflow name:', 'My Workflow') || 'Untitled Workflow',
+                nodes: nodes,
+                connections: connections,
+                timestamp: new Date().toISOString(),
+                version: '1.0'
+            };
+
+            const blob = new Blob([JSON.stringify(workflowData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `workflow_${workflowData.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log('Workflow saved:', workflowData.name);
+        }
+
+        function loadWorkflow() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const workflowData = JSON.parse(event.target.result);
+
+                        // Save current state for undo
+                        saveState();
+
+                        // Load workflow data
+                        nodes = workflowData.nodes || [];
+                        connections = workflowData.connections || [];
+
+                        // Update counters
+                        nodeIdCounter = Math.max(...nodes.map(n => parseInt(n.id.split('_')[1]) || 0), 0) + 1;
+                        connectionIdCounter = Math.max(...connections.map(c => parseInt(c.id.split('_')[1]) || 0), 0) + 1;
+
+                        // Re-render workflow
+                        renderWorkflow();
+                        updateStats();
+
+                        showNotification('Load Workflow', `Loaded: ${workflowData.name || 'Untitled'}`, 'success');
+                        console.log('Workflow loaded:', workflowData);
+
+                    } catch (error) {
+                        showNotification('Load Error', 'Failed to load workflow: ' + error.message, 'error');
+                        console.error('Load error:', error);
+                    }
+                };
+
+                reader.readAsText(file);
+            };
+
+            input.click();
+        }
+
+        function clearCanvas() {
+            if (!confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
+                return;
+            }
+
+            // Save current state for undo
+            saveState();
+
+            // Clear everything
+            nodes = [];
+            connections = [];
+            nodeIdCounter = 1;
+            connectionIdCounter = 1;
+            currentWorkflowId = null;
+
+            // Re-render
+            renderWorkflow();
+            updateStats();
+
+            // Update status
+            document.getElementById('workflowStatus').textContent = 'Ready';
+            document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
+
+            showNotification('Clear Canvas', 'Canvas cleared', 'info');
+            console.log('Canvas cleared');
+        }
+
+        function loadDefaultAutoClickerWorkflow() {
+            console.log('🚀 loadDefaultAutoClickerWorkflow() called');
+            console.log('Current nodes before:', nodes.length);
+
+            // Save current state for undo
+            saveState();
+
+            // Create default auto-clicker workflow
+            nodes = [
+                {
+                    id: 'node_1',
+                    type: 'Start',
+                    category: 'Control Flow',
+                    x: 50,
+                    y: 200,
+                    inputs: [],
+                    outputs: ['main'],
+                    config: {}
+                },
+                {
+                    id: 'node_2',
+                    type: 'Loop',
+                    category: 'Control Flow',
+                    x: 300,
+                    y: 200,
+                    inputs: ['input', 'loop_body'],
+                    outputs: ['item', 'loop_complete'],
+                    config: {
+                        loopType: 'while',
+                        maxIterations: 1000
+                    }
+                },
+                {
+                    id: 'node_3',
+                    type: 'HTTP Request',
+                    category: 'Network',
+                    x: 550,
+                    y: 150,
+                    inputs: ['url', 'options'],
+                    outputs: ['response', 'error'],
+                    config: {
+                        method: 'GET',
+                        url: 'http://localhost:3001/api/auto-clicker/status'
+                    }
+                },
+                {
+                    id: 'node_4',
+                    type: 'Condition',
+                    category: 'Control Flow',
+                    x: 800,
+                    y: 200,
+                    inputs: ['condition', 'true_path', 'false_path'],
+                    outputs: ['true', 'false'],
+                    config: {
+                        operator: 'equals',
+                        comparisonValue: 'running'
+                    }
+                },
+                {
+                    id: 'node_5',
+                    type: 'Delay',
+                    category: 'Control Flow',
+                    x: 1050,
+                    y: 250,
+                    inputs: ['duration'],
+                    outputs: ['done'],
+                    config: {
+                        duration: 500
+                    }
+                },
+                {
+                    id: 'node_6',
+                    type: 'End',
+                    category: 'Control Flow',
+                    x: 1300,
+                    y: 200,
+                    inputs: ['main'],
+                    outputs: [],
+                    config: {}
+                }
+            ];
+
+            connections = [
+                {
+                    id: 'connection_1',
+                    from: { nodeId: 'node_1', portIndex: 0 },
+                    to: { nodeId: 'node_2', portIndex: 0 }
+                },
+                {
+                    id: 'connection_2',
+                    from: { nodeId: 'node_2', portIndex: 0 },
+                    to: { nodeId: 'node_3', portIndex: 0 }
+                },
+                {
+                    id: 'connection_3',
+                    from: { nodeId: 'node_3', portIndex: 0 },
+                    to: { nodeId: 'node_4', portIndex: 0 }
+                },
+                {
+                    id: 'connection_4',
+                    from: { nodeId: 'node_4', portIndex: 0 },
+                    to: { nodeId: 'node_5', portIndex: 0 }
+                },
+                {
+                    id: 'connection_5',
+                    from: { nodeId: 'node_5', portIndex: 0 },
+                    to: { nodeId: 'node_2', portIndex: 0 }
+                },
+                {
+                    id: 'connection_6',
+                    from: { nodeId: 'node_4', portIndex: 1 },
+                    to: { nodeId: 'node_6', portIndex: 0 }
+                }
+            ];
+
+            nodeIdCounter = 7;
+            connectionIdCounter = 7;
+
+            console.log('✅ Created nodes:', nodes.length);
+            console.log('✅ Created connections:', connections.length);
+
+            // Re-render workflow
+            console.log('🎨 Calling renderWorkflow()...');
+            renderWorkflow();
+            updateStats();
+
+            showNotification('Auto-Clicker Workflow', 'Default auto-clicker workflow loaded', 'success');
+            console.log('✅ Auto-clicker workflow loaded successfully');
+        }
+
+        // Import Python file
+        function importPythonFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.py';
+            
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const pythonCode = event.target.result;
+                        const workflow = convertPythonToWorkflow(pythonCode, file.name);
+                        
+                        if (workflow.nodes.length > 0) {
+                            // Clear current workflow
+                            clearCanvas();
+                            
+                            // Load the converted workflow
+                            nodes = workflow.nodes;
+                            connections = workflow.connections;
+                            
+                            // Update counters
+                            if (nodes.length > 0) {
+                                const maxNodeId = Math.max(...nodes.map(n => parseInt(n.id.replace('node_', '')) || 0));
+                                nodeIdCounter = maxNodeId + 1;
+                            }
+                            
+                            if (connections.length > 0) {
+                                const maxConnId = Math.max(...connections.map(c => parseInt(c.id.replace('connection_', '')) || 0));
+                                connectionIdCounter = maxConnId + 1;
+                            }
+                            
+                            // Render workflow
+                            nodes.forEach(node => renderNode(node));
+                            connections.forEach(conn => renderConnection(conn));
+                            
+                            updateStats();
+                            showNotification('Python Import Success', `Imported ${workflow.nodes.length} functions from ${file.name}`, 'success');
+                            console.log('Python file imported:', file.name);
+                        } else {
+                            showNotification('Import Warning', 'No functions found in Python file', 'warning');
+                        }
+                        
+                    } catch (error) {
+                        showNotification('Import Error', 'Failed to import Python file: ' + error.message, 'error');
+                        console.error('Import error:', error);
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+
+        // Convert Python code to workflow
+        function convertPythonToWorkflow(pythonCode, fileName) {
+            const workflow = {
+                nodes: [],
+                connections: []
+            };
+            
+            // Extract functions from Python code
+            const functionRegex = /def\s+(\w+)\s*\([^)]*\)\s*:/g;
+            const functions = [];
+            let match;
+            
+            while ((match = functionRegex.exec(pythonCode)) !== null) {
+                functions.push({
+                    name: match[1],
+                    startIndex: match.index
+                });
+            }
+            
+            if (functions.length === 0) {
+                return workflow;
+            }
+            
+            // Add Start node
+            workflow.nodes.push({
+                id: `node_${nodeIdCounter++}`,
+                type: 'Start',
+                category: 'Control Flow',
+                x: 50,
+                y: 150,
+                inputs: [],
+                outputs: ['main'],
+                config: {}
+            });
+            
+            // Add Python nodes for each function
+            let currentX = 250;
+            let currentY = 150;
+            let previousNodeId = workflow.nodes[0].id;
+            
+            functions.forEach((func, index) => {
+                // Extract function code
+                const nextIndex = index < functions.length - 1 ? functions[index + 1].startIndex : pythonCode.length;
+                const functionCode = pythonCode.substring(func.startIndex, nextIndex).trim();
+                
+                // Create Python node
+                const nodeId = `node_${nodeIdCounter++}`;
+                workflow.nodes.push({
+                    id: nodeId,
+                    type: 'Execute Python',
+                    category: 'Python',
+                    x: currentX,
+                    y: currentY,
+                    inputs: ['code', 'args'],
+                    outputs: ['result', 'error'],
+                    config: {
+                        code: functionCode,
+                        timeout: 30,
+                        captureOutput: true
+                    }
+                });
+                
+                // Add connection from previous node
+                if (previousNodeId) {
+                    workflow.connections.push({
+                        id: `connection_${connectionIdCounter++}`,
+                        from: { nodeId: previousNodeId, portIndex: 0 },
+                        to: { nodeId: nodeId, portIndex: 0 }
+                    });
+                }
+                
+                previousNodeId = nodeId;
+                currentX += 200;
+                
+                // Add some vertical spacing for readability
+                if (currentX > 800) {
+                    currentX = 250;
+                    currentY += 150;
+                }
+            });
+            
+            // Add End node
+            const endNodeId = `node_${nodeIdCounter++}`;
+            workflow.nodes.push({
+                id: endNodeId,
+                type: 'End',
+                category: 'Control Flow',
+                x: currentX,
+                y: currentY,
+                inputs: ['main'],
+                outputs: [],
+                config: {}
+            });
+            
+            // Connect last function to End node
+            if (previousNodeId) {
+                workflow.connections.push({
+                    id: `connection_${connectionIdCounter++}`,
+                    from: { nodeId: previousNodeId, portIndex: 0 },
+                    to: { nodeId: endNodeId, portIndex: 0 }
+                });
+            }
+            
+            return workflow;
+        }
+
+        // Update node position
+        function updateNodePosition(nodeId, x, y) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+                node.x = x;
+                node.y = y;
+
+                const nodeElement = document.getElementById(nodeId);
+                if (nodeElement) {
+                    nodeElement.style.left = x + 'px';
+                    nodeElement.style.top = y + 'px';
+                }
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 's':
+                        e.preventDefault();
+                        saveWorkflow();
+                        break;
+                    case 'o':
+                        e.preventDefault();
+                        loadWorkflow();
+                        break;
+                    case 'r':
+                        e.preventDefault();
+                        runWorkflow();
+                        break;
+                    case 'z':
+                        e.preventDefault();
+                        undo();
+                        break;
+                    case 'y':
+                        e.preventDefault();
+                        redo();
+                        break;
+                }
+            } else if (e.key === 'Delete' && selectedNode) {
+                // Delete selected node
+                nodes = nodes.filter(n => n.id !== selectedNode.id);
+                connections = connections.filter(c =>
+                    c.from.nodeId !== selectedNode.id && c.to.nodeId !== selectedNode.id
+                );
+
+                const nodeEl = document.getElementById(selectedNode.id);
+                if (nodeEl) nodeEl.remove();
+
+                connections.forEach(conn => {
+                    const path = document.getElementById(conn.id);
+                    if (path) path.remove();
+                });
+
+                deselectAllNodes();
+                updateStats();
+            }
+        });
+
+        // Initialize everything
+        console.log('🚀 Initializing node editor...');
+        initSocket();
+        initCanvasEvents();
+        loadNodePalette();
+        console.log('✅ Node editor initialized');
+    </script>
+</body>
+</html>
