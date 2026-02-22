@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Clicker Test - Runtime Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto p-8 max-w-4xl">
+        <h1 class="text-4xl font-bold mb-2">
+            <i class="fas fa-mouse-pointer text-blue-400"></i>
+            Auto-Clicker Test Panel
+        </h1>
+        <p class="text-gray-400 mb-8">Test the auto-clicker API endpoints</p>
+
+        <!-- Status Display -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-semibold mb-4">
+                <i class="fas fa-info-circle text-green-400"></i>
+                Current Status
+            </h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-gray-400 text-sm">Session Status</p>
+                    <p id="sessionStatus" class="text-2xl font-bold text-yellow-400">idle</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Event Count</p>
+                    <p id="eventCount" class="text-2xl font-bold text-blue-400">0</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Session ID</p>
+                    <p id="sessionId" class="text-sm font-mono text-gray-300">-</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Duration</p>
+                    <p id="duration" class="text-2xl font-bold text-purple-400">0s</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-semibold mb-4">
+                <i class="fas fa-sliders-h text-orange-400"></i>
+                Control Panel
+            </h2>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Interval (ms)</label>
+                    <input type="number" id="interval" value="1000"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Click Count (0 = infinite)</label>
+                    <input type="number" id="clickCount" value="0"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Target X</label>
+                    <input type="number" id="targetX" value="500"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Target Y</label>
+                    <input type="number" id="targetY" value="500"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                </div>
+            </div>
+
+            <div class="flex gap-4">
+                <button onclick="startClicking()"
+                    class="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition-colors">
+                    <i class="fas fa-play mr-2"></i>Start
+                </button>
+                <button onclick="pauseClicking()"
+                    class="flex-1 px-6 py-3 bg-yellow-600 hover:bg-yellow-700 rounded-lg font-semibold transition-colors">
+                    <i class="fas fa-pause mr-2"></i>Pause
+                </button>
+                <button onclick="resumeClicking()"
+                    class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors">
+                    <i class="fas fa-play-circle mr-2"></i>Resume
+                </button>
+                <button onclick="stopClicking()"
+                    class="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition-colors">
+                    <i class="fas fa-stop mr-2"></i>Stop
+                </button>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-semibold mb-4">
+                <i class="fas fa-list text-purple-400"></i>
+                Event Log
+            </h2>
+            <div id="eventLog" class="bg-gray-900 rounded p-4 h-64 overflow-y-auto font-mono text-sm">
+                <p class="text-gray-500">Waiting for events...</p>
+            </div>
+        </div>
+
+        <!-- API Info -->
+        <div class="mt-6 p-4 bg-blue-900 bg-opacity-30 rounded-lg border border-blue-600">
+            <p class="text-sm">
+                <i class="fas fa-server mr-2"></i>
+                <strong>API Endpoint:</strong> http://localhost:3001/api/auto-clicker
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let statusInterval;
+
+        // Fetch current status
+        async function updateStatus() {
+            try {
+                const response = await fetch('http://localhost:3001/api/auto-clicker/status');
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('sessionStatus').textContent = data.status;
+                    document.getElementById('sessionStatus').className =
+                        data.status === 'running' ? 'text-2xl font-bold text-green-400' :
+                        data.status === 'paused' ? 'text-2xl font-bold text-yellow-400' :
+                        'text-2xl font-bold text-gray-400';
+
+                    document.getElementById('eventCount').textContent = data.eventCount || 0;
+                    document.getElementById('duration').textContent =
+                        data.duration ? Math.floor(data.duration / 1000) + 's' : '0s';
+                }
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+                addLog('❌ Failed to fetch status', 'error');
+            }
+        }
+
+        // Start auto-clicking
+        async function startClicking() {
+            const interval = parseInt(document.getElementById('interval').value);
+            const clickCount = parseInt(document.getElementById('clickCount').value);
+            const targetX = parseInt(document.getElementById('targetX').value);
+            const targetY = parseInt(document.getElementById('targetY').value);
+
+            try {
+                const response = await fetch('http://localhost:3001/api/auto-clicker/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        interval,
+                        clickCount,
+                        target: { x: targetX, y: targetY }
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('sessionId').textContent = data.sessionId;
+                    addLog(`✅ Started: ${data.message}`, 'success');
+                } else {
+                    addLog(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Failed to start: ${error.message}`, 'error');
+            }
+        }
+
+        // Pause auto-clicking
+        async function pauseClicking() {
+            try {
+                const response = await fetch('http://localhost:3001/api/auto-clicker/pause', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                addLog(data.success ? '⏸️ Paused' : `❌ ${data.error}`, data.success ? 'info' : 'error');
+            } catch (error) {
+                addLog(`❌ Failed to pause: ${error.message}`, 'error');
+            }
+        }
+
+        // Resume auto-clicking
+        async function resumeClicking() {
+            try {
+                const response = await fetch('http://localhost:3001/api/auto-clicker/resume', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                addLog(data.success ? '▶️ Resumed' : `❌ ${data.error}`, data.success ? 'info' : 'error');
+            } catch (error) {
+                addLog(`❌ Failed to resume: ${error.message}`, 'error');
+            }
+        }
+
+        // Stop auto-clicking
+        async function stopClicking() {
+            try {
+                const response = await fetch('http://localhost:3001/api/auto-clicker/stop', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                addLog(data.success ? '🛑 Stopped' : `❌ ${data.error}`, data.success ? 'success' : 'error');
+
+                if (data.success) {
+                    document.getElementById('sessionId').textContent = '-';
+                }
+            } catch (error) {
+                addLog(`❌ Failed to stop: ${error.message}`, 'error');
+            }
+        }
+
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const logDiv = document.getElementById('eventLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const colors = {
+                success: 'text-green-400',
+                error: 'text-red-400',
+                info: 'text-blue-400',
+                warning: 'text-yellow-400'
+            };
+
+            const entry = document.createElement('div');
+            entry.className = colors[type] || 'text-gray-300';
+            entry.textContent = `[${timestamp}] ${message}`;
+
+            if (logDiv.firstChild?.textContent === 'Waiting for events...') {
+                logDiv.innerHTML = '';
+            }
+
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Initialize
+        updateStatus();
+        statusInterval = setInterval(updateStatus, 1000);
+        addLog('🚀 Auto-Clicker Test Panel initialized', 'success');
+    </script>
+</body>
+</html>
