@@ -476,7 +476,8 @@ app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
     validateObject(connection.to, `connection[${index}].to`, ['nodeId', 'portIndex']);
   });
   
-  const workflowId = `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // Use client-provided ID if present (avoids socket event race conditions)
+  const workflowId = req.body.workflowId || `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
   console.log(`🚀 Starting workflow execution: ${workflowId}`);
   

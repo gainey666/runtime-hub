@@ -94,32 +94,27 @@ describe('WorkflowEngine', () => {
     });
 
     test('should respect concurrent workflow limit', async () => {
+      // Directly inject fake running workflows to reliably fill the slot limit,
+      // avoiding timing-sensitive races with fast Start→End workflows.
+      engine.runningWorkflows.set('fake_1', { id: 'fake_1', status: 'running' });
+      engine.runningWorkflows.set('fake_2', { id: 'fake_2', status: 'running' });
+      engine.runningWorkflows.set('fake_3', { id: 'fake_3', status: 'running' });
+
       const nodes = [
-        { id: 'start', type: 'Start', x: 0, y: 0, inputs: [], outputs: ['main'], config: {} },
-        { id: 'end', type: 'End', x: 100, y: 0, inputs: ['main'], outputs: [], config: {} }
+        { id: 'start', type: 'Start', x: 0, y: 0, config: {} },
+        { id: 'end',   type: 'End',   x: 100, y: 0, config: {} }
       ];
       const connections = [
-        { id: 'conn1', from: { nodeId: 'start', portIndex: 0 }, to: { nodeId: 'end', portIndex: 0 } }
+        { id: 'c1', from: { nodeId: 'start', portIndex: 0 }, to: { nodeId: 'end', portIndex: 0 } }
       ];
 
-      // Start 3 workflows
-      const wf1 = engine.executeWorkflow('test_wf_1', nodes, connections);
-      const wf2 = engine.executeWorkflow('test_wf_2', nodes, connections);
-      const wf3 = engine.executeWorkflow('test_wf_3', nodes, connections);
-      
-      // Try to start one more - should fail
+      // 4th workflow should be rejected immediately
       const result = await engine.executeWorkflow('test_wf_4', nodes, connections);
-      
+
       expect(result.status).toBe('error');
       expect(result.error).toBe('Maximum concurrent workflows (3) reached');
-      
-      // Clean up
-      engine.stopWorkflow('test_wf_1');
-      engine.stopWorkflow('test_wf_2');
-      engine.stopWorkflow('test_wf_3');
-      await wf1.catch(() => {});
-      await wf2.catch(() => {});
-      await wf3.catch(() => {});
+
+      // afterEach clears runningWorkflows
     });
 
     test('should timeout workflow execution', async () => {
@@ -343,6 +338,131 @@ describe('WorkflowEngine', () => {
 
       await expect(engine.executeNode(workflow, node, connections))
         .rejects.toThrow('No executor found for node type: UnknownNode');
+    });
+  });
+
+  describe('Data Flow — context.values', () => {
+    // Helpers
+    const makeNodes = (...types) => types.map((type, i) => ({
+      id: `n${i + 1}`, type, x: i * 100, y: 0, config: {}
+    }));
+
+    const chain = (nodeIds) => nodeIds.slice(0, -1).map((id, i) => ({
+      id: `c${i + 1}`,
+      from: { nodeId: id, portIndex: 0 },
+      to: { nodeId: nodeIds[i + 1], portIndex: 0 }
+    }));
+
+    test('context.values is populated after each node runs', async () => {
+      const nodes = makeNodes('Start', 'End');
+      const connections = chain(['n1', 'n2']);
+
+      const result = await engine.executeWorkflow('df_test_1', nodes, connections);
+
+      expect(result.context).toBeDefined();
+      expect(result.context.values['n1']).toBeDefined();
+      expect(result.context.values['n1'].message).toBe('Workflow execution started');
+      expect(result.context.values['n2']).toBeDefined();
+      expect(result.context.values['n2'].message).toBe('Workflow execution completed');
+    });
+
+    test('control-flow ports do not pass data to downstream inputs', async () => {
+      // Start(main) → Write Log(message port 1) — should NOT inject Start result as message
+      const nodes = [
+        { id: 'n1', type: 'Start',     x: 0, y: 0, config: {} },
+        { id: 'n2', type: 'Write Log', x: 1, y: 0, config: { message: 'static message', level: 'info' } },
+        { id: 'n3', type: 'End',       x: 2, y: 0, config: {} }
+      ];
+      // Start port 0 = 'main' (control-flow), wired to Write Log port 1 = 'message'
+      const connections = [
+        { id: 'c1', from: { nodeId: 'n1', portIndex: 0 }, to: { nodeId: 'n2', portIndex: 1 } },
+        { id: 'c2', from: { nodeId: 'n2', portIndex: 0 }, to: { nodeId: 'n3', portIndex: 0 } }
+      ];
+
+      const result = await engine.executeWorkflow('df_test_2', nodes, connections);
+
+      // Write Log should have used static config, not Start's result object
+      expect(result.context.values['n2'].message).toBe('static message');
+    });
+
+    test('Condition node follows true branch only when condition is true', async () => {
+      const nodes = [
+        { id: 'n1', type: 'Start',     x: 0, y: 0, config: {} },
+        { id: 'n2', type: 'Condition', x: 1, y: 0, config: { condition: 'yes', operator: 'equals', value: 'yes' } },
+        { id: 'n3', type: 'End',       x: 2, y: 0, config: {}, label: 'true-end' },
+        { id: 'n4', type: 'End',       x: 2, y: 1, config: {}, label: 'false-end' }
+      ];
+      const connections = [
+        { id: 'c1', from: { nodeId: 'n1', portIndex: 0 }, to: { nodeId: 'n2', portIndex: 0 } },
+        // Condition true(port 0) → n3
+        { id: 'c2', from: { nodeId: 'n2', portIndex: 0 }, to: { nodeId: 'n3', portIndex: 0 } },
+        // Condition false(port 1) → n4
+        { id: 'c3', from: { nodeId: 'n2', portIndex: 1 }, to: { nodeId: 'n4', portIndex: 0 } }
+      ];
+
+      const result = await engine.executeWorkflow('df_test_3', nodes, connections);
+
+      expect(result.status).toBe('completed');
+      expect(result.context.values['n2'].branch).toBe('true');
+      expect(result.context.values['n3']).toBeDefined();   // true branch ran
+      expect(result.context.values['n4']).toBeUndefined(); // false branch did NOT run
+    });
+
+    test('Condition node follows false branch only when condition is false', async () => {
+      const nodes = [
+        { id: 'n1', type: 'Start',     x: 0, y: 0, config: {} },
+        { id: 'n2', type: 'Condition', x: 1, y: 0, config: { condition: 'yes', operator: 'equals', value: 'no' } },
+        { id: 'n3', type: 'End',       x: 2, y: 0, config: {} },
+        { id: 'n4', type: 'End',       x: 2, y: 1, config: {} }
+      ];
+      const connections = [
+        { id: 'c1', from: { nodeId: 'n1', portIndex: 0 }, to: { nodeId: 'n2', portIndex: 0 } },
+        { id: 'c2', from: { nodeId: 'n2', portIndex: 0 }, to: { nodeId: 'n3', portIndex: 0 } },
+        { id: 'c3', from: { nodeId: 'n2', portIndex: 1 }, to: { nodeId: 'n4', portIndex: 0 } }
+      ];
+
+      const result = await engine.executeWorkflow('df_test_4', nodes, connections);
+
+      expect(result.context.values['n2'].branch).toBe('false');
+      expect(result.context.values['n3']).toBeUndefined(); // true branch did NOT run
+      expect(result.context.values['n4']).toBeDefined();   // false branch ran
+    });
+
+    test('Transform JSON receives data wired from upstream node', async () => {
+      const nodes = [
+        { id: 'n1', type: 'Start',         x: 0, y: 0, config: {} },
+        { id: 'n2', type: 'Transform JSON', x: 1, y: 0, config: {
+            operation: 'get',
+            key: 'message'
+          }
+        },
+        { id: 'n3', type: 'End',           x: 2, y: 0, config: {} }
+      ];
+      // n1's main(port 0) is control-flow — should be skipped by resolveInputs
+      // Wire n1's output port 0 to n2's data input port 0
+      const connections = [
+        { id: 'c1', from: { nodeId: 'n1', portIndex: 0 }, to: { nodeId: 'n2', portIndex: 0 } },
+        { id: 'c2', from: { nodeId: 'n2', portIndex: 0 }, to: { nodeId: 'n3', portIndex: 0 } }
+      ];
+
+      const result = await engine.executeWorkflow('df_test_5', nodes, connections);
+
+      // Start's 'main' port is control-flow, so Transform JSON should fall back to config.input (empty {})
+      // operation=get on empty object with key='message' should return undefined, not crash
+      expect(result.status).toBe('completed');
+      expect(result.context.values['n2'].success).toBe(true);
+    });
+
+    test('assets directory is created for each run', async () => {
+      const fs = require('fs');
+      const path = require('path');
+      const nodes = makeNodes('Start', 'End');
+      const connections = chain(['n1', 'n2']);
+
+      const result = await engine.executeWorkflow('df_assets_test', nodes, connections);
+
+      expect(result.context.assetsDir).toBeDefined();
+      expect(fs.existsSync(result.context.assetsDir)).toBe(true);
     });
   });
 

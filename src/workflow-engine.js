@@ -150,7 +150,7 @@ class WorkflowEngine extends EventEmitter {
                 throw new Error('No Start node found in workflow');
             }
 
-            // Initialize workflow
+            // Initialize workflow and reserve the slot BEFORE any awaits
             workflow = {
                 id: workflowId,
                 nodes: nodes,
@@ -160,6 +160,7 @@ class WorkflowEngine extends EventEmitter {
                 status: 'running',
                 cancelled: false
             };
+            this.runningWorkflows.set(workflowId, workflow);
 
             // Create execution context for data flow between nodes
             const assetsDir = await this.createRunWorkspace(workflowId);
@@ -169,8 +170,6 @@ class WorkflowEngine extends EventEmitter {
                 values: {},      // context.values[nodeId] = executor result after each node runs
                 assetsDir        // workspace dir for this run's temp files
             };
-
-            this.runningWorkflows.set(workflowId, workflow);
 
             // Execute workflow with timeout
             await Promise.race([
@@ -198,6 +197,18 @@ class WorkflowEngine extends EventEmitter {
                 workflow.duration = workflow.endTime - (workflow.startTime || Date.now());
                 this.runningWorkflows.delete(workflowId);
                 this.broadcastWorkflowUpdate(workflowId, 'error', { error: error.message });
+            } else {
+                // Error before workflow was initialised (e.g. limit reached, no Start node)
+                workflow = {
+                    id: workflowId,
+                    status: 'error',
+                    error: error.message,
+                    startTime: Date.now(),
+                    endTime: Date.now(),
+                    duration: 0,
+                    nodes: nodes,
+                    connections: connections
+                };
             }
         }
 
@@ -416,6 +427,7 @@ class WorkflowEngine extends EventEmitter {
      * Update performance metrics
      */
     updateMetrics(workflow) {
+        if (!workflow) return;
         this.performanceMetrics.totalWorkflows++;
         
         if (workflow.status === 'completed') {
@@ -438,6 +450,7 @@ class WorkflowEngine extends EventEmitter {
      * Add workflow to history
      */
     addToHistory(workflow) {
+        if (!workflow) return;
         this.workflowHistory.push({
             id: workflow.id,
             status: workflow.status,

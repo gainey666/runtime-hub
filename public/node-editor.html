@@ -439,6 +439,7 @@
         let nodeIdCounter = 1;
         let connectionIdCounter = 1;
         let currentWorkflowId = null;
+        let nodeOutputData = {};   // nodeOutputData[nodeId] = last output received via node_update
 
         // Configuration constants (remove magic values)
         const CONFIG = {
@@ -744,7 +745,7 @@
             }
         }
 
-        // Handle node execution updates (engine sends { status: 'running'|'completed'|'error', nodeId, workflowId })
+        // Handle node execution updates (engine sends { status, nodeId, workflowId, data })
         function handleNodeUpdate(data) {
             const nodeElement = document.getElementById(data.nodeId);
             if (!nodeElement) return;
@@ -755,9 +756,18 @@
                     break;
                 case 'completed':
                     highlightNode(nodeElement, 'completed');
+                    // Store output data so the inspector can show it
+                    if (data.data && Object.keys(data.data).length > 0) {
+                        nodeOutputData[data.nodeId] = data.data;
+                        // If this node is currently selected, refresh the inspector
+                        if (selectedNode && selectedNode.id === data.nodeId) {
+                            showDataInspector(selectedNode, data.data);
+                        }
+                    }
                     break;
                 case 'error':
                     highlightNode(nodeElement, 'error');
+                    if (data.data) nodeOutputData[data.nodeId] = data.data;
                     console.error('Node execution error:', data.data && data.data.error);
                     break;
             }
@@ -787,6 +797,42 @@
             document.querySelectorAll('.node').forEach(node => {
                 node.classList.remove('node-running', 'node-completed', 'node-error');
             });
+        }
+
+        // Show the data inspector panel with a node's output
+        function showDataInspector(node, data) {
+            let panel = document.getElementById('dataInspector');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'dataInspector';
+                panel.style.cssText = [
+                    'position:fixed', 'bottom:48px', 'right:16px', 'width:340px',
+                    'max-height:320px', 'background:#1a1a2e', 'border:1px solid #10b981',
+                    'border-radius:8px', 'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
+                    'z-index:9999', 'display:flex', 'flex-direction:column',
+                    'font-family:monospace', 'font-size:12px'
+                ].join(';');
+                document.body.appendChild(panel);
+            }
+
+            // Filter out internal flags before displaying
+            const display = Object.fromEntries(
+                Object.entries(data).filter(([k]) => !k.startsWith('_'))
+            );
+
+            panel.innerHTML = `
+                <div style="padding:8px 12px;border-bottom:1px solid #10b981;display:flex;justify-content:space-between;align-items:center;background:#0d1117;border-radius:8px 8px 0 0">
+                    <span style="color:#10b981;font-weight:bold">${node.type} — Output</span>
+                    <button onclick="hideDataInspector()" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;padding:0 4px">✕</button>
+                </div>
+                <pre style="margin:0;padding:10px 12px;overflow:auto;flex:1;color:#e2e8f0;white-space:pre-wrap;word-break:break-all">${JSON.stringify(display, null, 2)}</pre>
+            `;
+            panel.style.display = 'flex';
+        }
+
+        function hideDataInspector() {
+            const panel = document.getElementById('dataInspector');
+            if (panel) panel.style.display = 'none';
         }
 
         // Show notification
@@ -1204,12 +1250,19 @@
             selectedNode = node;
             document.getElementById(node.id).classList.add('selected');
             document.getElementById('selectedNode').textContent = `Selected: ${node.type}`;
+            // Show output data if this node has run
+            if (nodeOutputData[node.id]) {
+                showDataInspector(node, nodeOutputData[node.id]);
+            } else {
+                hideDataInspector();
+            }
         }
 
         function deselectAllNodes() {
             document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
             selectedNode = null;
             document.getElementById('selectedNode').textContent = 'No selection';
+            hideDataInspector();
         }
 
         // Update node input - mirrors value to node.config so the workflow engine can read it
@@ -1229,34 +1282,38 @@
                 return;
             }
 
+            // Generate ID client-side and set it BEFORE the fetch so socket events
+            // arriving during execution are not missed due to a race condition.
+            const workflowId = `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            currentWorkflowId = workflowId;
+            nodeOutputData = {};
+            clearNodeHighlights();
+            hideDataInspector();
+
             try {
                 document.getElementById('workflowStatus').textContent = 'Starting...';
                 document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
 
-                // Send workflow to server for execution
                 const response = await fetch('http://127.0.0.1:3000/api/workflows/execute', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         nodes: nodes,
                         connections: connections,
-                        autoClicker: true // Enable auto-clicker integration
+                        workflowId: workflowId   // tell server to use our ID
                     })
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
-                    currentWorkflowId = result.workflowId;
                     document.getElementById('workflowStatus').textContent = 'Running';
                     document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
-                    console.log('Workflow started:', result.workflowId);
+                    console.log('Workflow started:', workflowId);
                 } else {
                     throw new Error(result.error);
                 }
-                
+
             } catch (error) {
                 console.error('Failed to start workflow:', error);
                 document.getElementById('workflowStatus').textContent = 'Error';
