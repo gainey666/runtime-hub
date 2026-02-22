@@ -1293,7 +1293,7 @@
 
         function saveWorkflow() {
             const workflowData = {
-                name: prompt('Enter workflow name:', 'My Workflow') || 'Untitled Workflow',
+                name: 'My Workflow',  // TODO: Use IPC dialog for proper name input
                 nodes: nodes,
                 connections: connections,
                 timestamp: new Date().toISOString(),
