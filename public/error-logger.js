@@ -9,10 +9,13 @@ const isBrowser = typeof window !== 'undefined';
 class ErrorLogger {
     constructor() {
         this.errors = [];
+        this.warnings = [];
+        this.info = [];
         this.logs = [];
         this.systemInfo = {};
         this.startTime = new Date();
         this.maxLogs = 1000; // Prevent memory issues
+        this.autoExport = true; // Auto-export on critical errors
 
         if (isBrowser) {
             this.setupErrorCapture();
@@ -92,9 +95,12 @@ class ErrorLogger {
         if (this.logs.length > this.maxLogs) {
             this.logs = this.logs.slice(-this.maxLogs);
         }
+        if (this.errors.length > this.maxLogs) {
+            this.errors = this.errors.slice(-this.maxLogs);
+        }
 
         // Auto-export critical errors (browser only)
-        if (isBrowser && (type.includes('Error') || type.includes('Exception'))) {
+        if (this.autoExport && isBrowser && (type.includes('Error') || type.includes('Exception'))) {
             this.exportDebugData();
         }
     }
@@ -107,11 +113,15 @@ class ErrorLogger {
             timestamp: new Date().toISOString(),
             severity: 'warning'
         };
+        this.warnings.push(logEntry);
         this.logs.push(logEntry);
 
         // Limit log size
         if (this.logs.length > this.maxLogs) {
             this.logs = this.logs.slice(-this.maxLogs);
+        }
+        if (this.warnings.length > this.maxLogs) {
+            this.warnings = this.warnings.slice(-this.maxLogs);
         }
     }
 
@@ -123,11 +133,15 @@ class ErrorLogger {
             timestamp: new Date().toISOString(),
             severity: 'info'
         };
+        this.info.push(logEntry);
         this.logs.push(logEntry);
 
         // Limit log size
         if (this.logs.length > this.maxLogs) {
             this.logs = this.logs.slice(-this.maxLogs);
+        }
+        if (this.info.length > this.maxLogs) {
+            this.info = this.info.slice(-this.maxLogs);
         }
     }
 
@@ -252,8 +266,12 @@ class ErrorLogger {
 
     clearLogs() {
         this.errors = [];
+        this.warnings = [];
+        this.info = [];
         this.logs = [];
-        console.log('🧹 Error logs cleared');
+        if (isBrowser) {
+            console.log('🧹 Error logs cleared');
+        }
     }
 }
 
