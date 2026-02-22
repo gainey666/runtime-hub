@@ -583,14 +583,14 @@
                 document.getElementById('workflowStatus').textContent = 'Offline';
             });
             
-            // Workflow execution updates
-            socket.on('workflow_update', (data) => {
-                console.log('Workflow update:', data);
+            // Workflow execution updates (server emits 'execution_update')
+            socket.on('execution_update', (data) => {
+                console.log('Execution update:', data);
                 if (data.workflowId === currentWorkflowId) {
                     handleWorkflowUpdate(data);
                 }
             });
-            
+
             // Node execution updates
             socket.on('node_update', (data) => {
                 console.log('Node update:', data);
@@ -714,52 +714,52 @@
             return icons[category] || 'fa-cube';
         }
 
-        // Handle workflow updates
+        // Handle workflow updates (server sends { type: 'workflow_started'|'workflow_completed'|'workflow_error', workflowId })
         function handleWorkflowUpdate(data) {
-            const { status, workflowData } = data;
-            
-            switch (status) {
-                case 'running':
-                    document.getElementById('workflowStatus').textContent = 'Running';
-                    document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
+            const statusEl = document.getElementById('workflowStatus');
+            switch (data.type) {
+                case 'workflow_started':
+                    statusEl.textContent = 'Running';
+                    statusEl.className = 'text-green-400 font-bold';
                     break;
-                case 'completed':
-                    document.getElementById('workflowStatus').textContent = 'Completed';
-                    document.getElementById('workflowStatus').className = 'text-blue-400 font-bold';
+                case 'workflow_completed':
+                    statusEl.textContent = 'Completed';
+                    statusEl.className = 'text-blue-400 font-bold';
                     clearNodeHighlights();
+                    currentWorkflowId = null;
                     break;
-                case 'error':
-                    document.getElementById('workflowStatus').textContent = 'Error';
-                    document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
+                case 'workflow_error':
+                    statusEl.textContent = 'Error';
+                    statusEl.className = 'text-red-400 font-bold';
                     clearNodeHighlights();
-                    alert('Workflow execution failed: ' + (workflowData.error || 'Unknown error'));
+                    currentWorkflowId = null;
+                    showNotification('Workflow Error', data.error || 'Workflow execution failed', 'error');
                     break;
-                case 'stopped':
-                    document.getElementById('workflowStatus').textContent = 'Stopped';
-                    document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
+                case 'workflow_stopped':
+                    statusEl.textContent = 'Stopped';
+                    statusEl.className = 'text-yellow-400 font-bold';
                     clearNodeHighlights();
+                    currentWorkflowId = null;
                     break;
             }
         }
 
-        // Handle node execution updates
+        // Handle node execution updates (server sends { type: 'node_started'|'node_completed', nodeId, workflowId })
         function handleNodeUpdate(data) {
-            const { nodeId, status, data: nodeData } = data;
-            const nodeElement = document.getElementById(nodeId);
-            
-            if (nodeElement) {
-                switch (status) {
-                    case 'running':
-                        highlightNode(nodeElement, 'running');
-                        break;
-                    case 'completed':
-                        highlightNode(nodeElement, 'completed');
-                        break;
-                    case 'error':
-                        highlightNode(nodeElement, 'error');
-                        console.error('Node execution error:', nodeData.error);
-                        break;
-                }
+            const nodeElement = document.getElementById(data.nodeId);
+            if (!nodeElement) return;
+
+            switch (data.type) {
+                case 'node_started':
+                    highlightNode(nodeElement, 'running');
+                    break;
+                case 'node_completed':
+                    highlightNode(nodeElement, 'completed');
+                    break;
+                case 'node_error':
+                    highlightNode(nodeElement, 'error');
+                    console.error('Node execution error:', data.error);
+                    break;
             }
         }
 
@@ -1265,7 +1265,7 @@
 
         async function stopWorkflow() {
             if (!currentWorkflowId) {
-                alert('No workflow is currently running!');
+                showNotification('Stop Workflow', 'No workflow is currently running', 'warning');
                 return;
             }
 
@@ -1273,21 +1273,21 @@
                 const response = await fetch(`http://127.0.0.1:3000/api/workflows/${currentWorkflowId}/stop`, {
                     method: 'POST'
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     document.getElementById('workflowStatus').textContent = 'Stopped';
                     document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
                     currentWorkflowId = null;
                     clearNodeHighlights();
-                    console.log('Workflow stopped');
+                    showNotification('Workflow Stopped', 'Workflow has been stopped', 'success');
                 } else {
-                    throw new Error(result.error);
+                    throw new Error(result.error || 'Unknown error');
                 }
             } catch (error) {
                 console.error('Failed to stop workflow:', error);
-                alert('Failed to stop workflow: ' + error.message);
+                showNotification('Stop Error', 'Failed to stop workflow: ' + error.message, 'error');
             }
         }
 
