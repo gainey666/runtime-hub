@@ -76,11 +76,12 @@ describe('AutoClickerEngine', () => {
         area: { x: 0, y: 0, width: 800, height: 600 },
         ocr: { engine: 'simple', language: ['eng'], confidence: 0.7 },
         click: { button: 'left', clickType: 'single' },
-        refreshRate: 500
+        refreshRate: 100,
+        maxIterations: 1  // Prevent infinite loop
       };
 
-      const sessionId = await engine.startSession(config);
-      
+      const sessionId = await engine.start(config);
+
       expect(sessionId).toBeDefined();
       expect(typeof sessionId).toBe('string');
       expect(engine.sessions.has(sessionId)).toBe(true);
@@ -92,18 +93,19 @@ describe('AutoClickerEngine', () => {
         area: { x: 0, y: 0, width: 800, height: 600 },
         ocr: { engine: 'simple', language: ['eng'], confidence: 0.7 },
         click: { button: 'left', clickType: 'single' },
-        refreshRate: 500
+        refreshRate: 100,
+        maxIterations: 1  // Prevent infinite loop
       };
 
-      const sessionId = await engine.startSession(config);
-      await engine.stopSession(sessionId);
-      
+      const sessionId = await engine.start(config);
+      await engine.stop(sessionId);
+
       expect(engine.sessions.has(sessionId)).toBe(false);
       expect(engine.runningSessions.has(sessionId)).toBe(false);
     });
 
     test('should handle stopping non-existent session', async () => {
-      await expect(engine.stopSession('non-existent-session')).rejects.toThrow();
+      await expect(engine.stop('non-existent-session')).rejects.toThrow();
     });
   });
 
@@ -113,7 +115,8 @@ describe('AutoClickerEngine', () => {
         area: { x: 0, y: 0, width: 800, height: 600 },
         ocr: { engine: 'simple', language: ['eng'], confidence: 0.7 },
         click: { button: 'left', clickType: 'single' },
-        refreshRate: 500
+        refreshRate: 100,
+        maxIterations: 1  // Prevent infinite loop
       };
 
       let eventReceived = false;
@@ -123,7 +126,7 @@ describe('AutoClickerEngine', () => {
         expect(data.config).toEqual(config);
       });
 
-      await engine.startSession(config);
+      await engine.start(config);
       expect(eventReceived).toBe(true);
     });
 
@@ -132,7 +135,8 @@ describe('AutoClickerEngine', () => {
         area: { x: 0, y: 0, width: 800, height: 600 },
         ocr: { engine: 'simple', language: ['eng'], confidence: 0.7 },
         click: { button: 'left', clickType: 'single' },
-        refreshRate: 500
+        refreshRate: 100,
+        maxIterations: 1  // Prevent infinite loop
       };
 
       let eventReceived = false;
@@ -142,9 +146,9 @@ describe('AutoClickerEngine', () => {
         expect(data.totalClicks).toBeGreaterThanOrEqual(0);
       });
 
-      const sessionId = await engine.startSession(config);
-      await engine.stopSession(sessionId);
-      
+      const sessionId = await engine.start(config);
+      await engine.stop(sessionId);
+
       expect(eventReceived).toBe(true);
     });
   });
@@ -176,7 +180,7 @@ describe('AutoClickerEngine', () => {
         refreshRate: 500
       };
 
-      await expect(engine.startSession(invalidConfig)).rejects.toThrow();
+      await expect(engine.start(invalidConfig)).rejects.toThrow();
     });
 
     test('should emit error events on failures', async () => {
@@ -194,7 +198,7 @@ describe('AutoClickerEngine', () => {
       });
 
       try {
-        await engine.startSession(invalidConfig);
+        await engine.start(invalidConfig);
       } catch (error) {
         // Expected to throw
       }

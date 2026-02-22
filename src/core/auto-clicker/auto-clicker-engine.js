@@ -88,16 +88,24 @@ class AutoClickerEngine extends EventEmitter {
         }
     }
     validateConfig(config) {
-        if (!config.area || config.area.width <= 0 || config.area.height <= 0) {
+        if (!config.area || typeof config.area.x !== 'number' || typeof config.area.y !== 'number' ||
+            config.area.width <= 0 || config.area.height <= 0) {
             throw new Error('Invalid area configuration');
+        }
+        if (config.area.x < 0 || config.area.y < 0) {
+            throw new Error('Invalid area configuration: x and y must be non-negative');
         }
         if (!config.ocr || config.ocr.confidence < 0 || config.ocr.confidence > 1) {
             throw new Error('Invalid OCR configuration');
         }
+        const validEngines = ['simple', 'tesseract', 'windows-ocr'];
+        if (!config.ocr.engine || !validEngines.includes(config.ocr.engine)) {
+            throw new Error(`Invalid OCR engine: must be one of ${validEngines.join(', ')}`);
+        }
         if (!config.click || !['left', 'right', 'middle'].includes(config.click.button)) {
             throw new Error('Invalid click configuration');
         }
-        if (config.refreshRate <= 0 || config.refreshRate > 60000) {
+        if (!config.refreshRate || config.refreshRate <= 0 || config.refreshRate > 60000) {
             throw new Error('Invalid refresh rate (must be between 1ms and 60s)');
         }
     }
