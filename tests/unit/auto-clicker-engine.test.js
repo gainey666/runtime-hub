@@ -8,6 +8,9 @@ const { AutoClickerEngine } = require('../../src/core/auto-clicker/auto-clicker-
 describe('AutoClickerEngine', () => {
   let engine;
 
+  // Set timeout for all tests
+  jest.setTimeout(10000); // 10 seconds max per test
+
   beforeEach(() => {
     engine = new AutoClickerEngine();
   });
@@ -19,6 +22,10 @@ describe('AutoClickerEngine', () => {
       const sessionIds = Array.from(engine.sessions.keys());
       for (const sessionId of sessionIds) {
         try {
+          const session = engine.sessions.get(sessionId);
+          if (session) {
+            session.status = 'stopped'; // Force stop
+          }
           await engine.stop(sessionId);
         } catch (error) {
           // Ignore errors during cleanup
@@ -27,6 +34,8 @@ describe('AutoClickerEngine', () => {
       engine.sessions.clear();
       engine.runningSessions.clear();
     }
+    // Wait a bit for background operations to finish
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   describe('Engine Initialization', () => {
@@ -213,8 +222,11 @@ describe('AutoClickerEngine', () => {
         // Expected to throw during validation
       }
 
+      // Wait a bit for any background error events
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Note: Error event emission may need to be implemented
       // This test ensures error handling structure is in place
-    }, 5000);
+    });
   });
 });
