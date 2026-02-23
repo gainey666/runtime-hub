@@ -5,11 +5,11 @@
 module.exports = {
     testEnvironment: 'node',
     testTimeout: 15000, // 15 seconds per test
-    setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+    setupFilesAfterEnv: ['<rootDir>/../../setup.js'],
     collectCoverageFrom: [
-        '<rootDir>/src/',
-        '!<rootDir>/src/core/',
-        '!<rootDir>/src/auto-clicker/'
+        '<rootDir>/../../src/',
+        '!<rootDir>/../../src/core/',
+        '!<rootDir>/../../src/auto-clicker/'
     ],
     coverageThreshold: {
         global: {
