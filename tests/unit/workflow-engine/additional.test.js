@@ -35,8 +35,18 @@ describe('WorkflowEngine - Additional Coverage', () => {
     engine.runningWorkflows.clear();
     engine.workflowHistory = [];
     
-    // Wait a bit for async operations to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Remove all event listeners to prevent memory leaks
+    engine.removeAllListeners();
+    mockIo.removeAllListeners();
+    
+    // Clear all intervals and timeouts
+    for (let i = 1; i < 99999; i++) {
+      clearInterval(i);
+      clearTimeout(i);
+    }
+    
+    // Wait for async operations to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
   });
 
   describe('Constructor Edge Cases', () => {
