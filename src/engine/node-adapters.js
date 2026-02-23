@@ -210,7 +210,8 @@ async function executePython(node, workflow, connections, inputs = {}) {
     await fs.writeFile(tmpFile, code, 'utf8');
 
     return new Promise((resolve) => {
-        const python = spawn('python', [tmpFile], { shell: true });
+        // Fixed shell injection vulnerability - use shell: false and proper argument array
+        const python = spawn('python', [tmpFile], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
         let stdout = '', stderr = '';
 
         python.stdout.on('data', d => { stdout += d.toString(); });
@@ -261,13 +262,24 @@ async function executeMonitorFunction(node, workflow, connections, inputs = {}) 
                 checkResult = { check: i + 1, error: err.message, ok: false };
             }
         } else {
-            const { execSync } = require('child_process');
-            try {
-                execSync(`tasklist /FI "IMAGENAME eq ${target}" /NH`, { stdio: 'pipe' });
-                checkResult = { check: i + 1, process: target, running: true };
-            } catch {
-                checkResult = { check: i + 1, process: target, running: false };
-            }
+            // Fixed shell injection vulnerability - use spawn with shell: false instead of execSync
+            const { spawn } = require('child_process');
+            checkResult = await new Promise((resolve) => {
+                const tasklist = spawn('tasklist', ['/FI', `IMAGENAME eq ${target}`, '/NH'], { shell: false });
+                let stdout = '', stderr = '';
+                
+                tasklist.stdout.on('data', d => { stdout += d.toString(); });
+                tasklist.stderr.on('data', d => { stderr += d.toString(); });
+                
+                tasklist.on('close', (code) => {
+                    const isRunning = stdout.trim().length > 0 && !stdout.includes('No tasks are running');
+                    resolve({ check: i + 1, process: target, running: isRunning });
+                });
+                
+                tasklist.on('error', (err) => {
+                    resolve({ check: i + 1, error: err.message, ok: false });
+                });
+            });
         }
 
         results.push(checkResult);
@@ -336,9 +348,31 @@ async function executeStartProcess(node, workflow, connections, inputs = {}) {
 
     console.log(`🚀 Starting real process: ${command} ${args.join(' ')}`);
 
+    // Fixed shell injection vulnerability - sanitize command and use shell: false with proper argument array
+    // Allow only safe commands (whitelist approach)
+    const safeCommands = ['node', 'python', 'python3', 'npm', 'git', 'echo', 'dir', 'ls'];
+    const commandParts = command.trim().split(/\s+/);
+    const baseCommand = commandParts[0];
+    
+    // Enhanced security check: reject commands with shell metacharacters
+    const shellMetacharacters = /[;&|`$()<>]/;
+    if (shellMetacharacters.test(command)) {
+        return { success: false, error: `Command contains shell metacharacters and is not allowed for security reasons` };
+    }
+    
+    if (!safeCommands.includes(baseCommand)) {
+        return { success: false, error: `Command '${baseCommand}' is not allowed for security reasons` };
+    }
+    
+    // Sanitize arguments to prevent shell injection
+    const sanitizedArgs = commandParts.slice(1).map(arg => 
+        arg.replace(/[;&|`$()<>]/g, '') // Remove shell metacharacters
+    );
+
     return new Promise((resolve, reject) => {
         try {
-            const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], shell: true });
+            // Fixed: use shell: false and proper argument array
+            const child = spawn(baseCommand, sanitizedArgs, { stdio: ['pipe', 'pipe', 'pipe'], shell: false });
             let stdout = '', stderr = '';
 
             child.stdout?.on('data', (data) => { stdout += data.toString(); });

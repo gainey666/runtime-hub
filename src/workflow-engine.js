@@ -199,6 +199,8 @@ class WorkflowEngine extends EventEmitter {
         const nodeType = node.type;
 
         console.log(`⚡ Executing node: ${nodeType} (${nodeId})`);
+        console.log(`🔍 Debug: node object:`, node);
+        console.log(`🔍 Debug: node.type:`, nodeType);
 
         this.io.emit('log_entry', {
             source: 'WorkflowEngine',
@@ -214,6 +216,9 @@ class WorkflowEngine extends EventEmitter {
         this.broadcastNodeUpdate(workflow.id, nodeId, 'running', {});
 
         try {
+            console.log(`🔍 Debug: Looking for executor for node type: ${nodeType}`);
+            console.log(`🔍 Debug: Available executors:`, Array.from(this.nodeExecutors.keys()));
+            
             const executor = this.nodeExecutors.get(nodeType);
             if (!executor) throw new Error(`No executor found for node type: ${nodeType}`);
 
@@ -244,6 +249,10 @@ class WorkflowEngine extends EventEmitter {
             }
 
         } catch (error) {
+            console.log(`🔍 Debug: Caught error in executeNode:`, error.message);
+            console.log(`🔍 Debug: nodeType at error:`, nodeType);
+            console.log(`🔍 Debug: node object at error:`, node);
+            
             nodeState.status = 'error';
             nodeState.error = error.message;
             nodeState.endTime = Date.now();
@@ -258,7 +267,57 @@ class WorkflowEngine extends EventEmitter {
             });
 
             this.broadcastNodeUpdate(workflow.id, nodeId, 'error', { error: error.message });
-            throw error;
+
+            // Handle error based on node's onError configuration
+            const onError = node.config?.onError || 'stop';
+            
+            switch (onError) {
+                case 'skip':
+                    console.log(`⚠️ Skipping failed node ${nodeId} due to onError: skip configuration`);
+                    this.io.emit('log_entry', {
+                        source: 'WorkflowEngine',
+                        level: 'warning',
+                        message: `Skipping failed node: ${nodeType} (${nodeId})`,
+                        data: { nodeId, error: error.message }
+                    });
+                    // Don't throw error, continue with next nodes
+                    break;
+                    
+                case 'retry':
+                    const maxRetries = node.config?.maxRetries || 3;
+                    const retryCount = nodeState.retryCount || 0;
+                    
+                    if (retryCount < maxRetries) {
+                        nodeState.retryCount = retryCount + 1;
+                        console.log(`🔄 Retrying node ${nodeId} (${retryCount + 1}/${maxRetries})`);
+                        this.io.emit('log_entry', {
+                            source: 'WorkflowEngine',
+                            level: 'info',
+                            message: `Retrying node: ${nodeType} (${nodeId}) - Attempt ${retryCount + 1}/${maxRetries}`,
+                            data: { nodeId, retryCount: retryCount + 1, maxRetries }
+                        });
+                        
+                        // Wait a bit before retrying
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        // Retry the node execution
+                        return this.executeNode(workflow, node, connections);
+                    } else {
+                        console.log(`❌ Node ${nodeId} failed after ${maxRetries} retries`);
+                        this.io.emit('log_entry', {
+                            source: 'WorkflowEngine',
+                            level: 'error',
+                            message: `Node failed after ${maxRetries} retries: ${nodeType} (${nodeId})`,
+                            data: { nodeId, error: error.message, maxRetries }
+                        });
+                        throw error;
+                    }
+                    
+                case 'stop':
+                default:
+                    // Original behavior - stop the workflow
+                    throw error;
+            }
         }
     }
 

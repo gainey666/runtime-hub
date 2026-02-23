@@ -1,0 +1,44 @@
+{
+  "name": "Data Transform Plugin",
+  "version": "1.0.0",
+  "description": "Transforms string and number data with various operations",
+  "author": "Runtime Hub Team",
+  "category": "Utility",
+  "main": "index.js",
+  "nodes": [
+    {
+      "type": "Data Transform",
+      "description": "Transforms string or number data with configurable operations",
+      "category": "Utility",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "string|number",
+          "description": "Data to transform"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "string|number|object",
+          "description": "Transformed data or error object"
+        }
+      ],
+      "config": [
+        {
+          "name": "operation",
+          "type": "select",
+          "options": ["uppercase", "lowercase", "trim", "parse-as-number", "parse-as-json"],
+          "default": "uppercase",
+          "description": "Transformation operation"
+        },
+        {
+          "name": "defaultValue",
+          "type": "text",
+          "default": "",
+          "description": "Default value if input is empty"
+        }
+      ]
+    }
+  ]
+}

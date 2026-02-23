@@ -507,8 +507,9 @@ describe('WorkflowEngine - Additional Coverage', () => {
         id: 'monitor',
         type: 'Monitor Function',
         config: {
-          functionName: 'testFunction',
-          interval: 1000
+          target: '',
+          interval: 100,
+          checks: 1
         }
       };
       const connections = [];
@@ -530,10 +531,12 @@ describe('WorkflowEngine - Additional Coverage', () => {
 
       const result = await adapters.executeMonitorFunction(node, workflow, connections);
       
+      expect(result).toBeDefined();
       expect(result.success).toBe(true);
       expect(result.target).toBe('');
       expect(result.checks).toBeDefined();
       expect(Array.isArray(result.checks)).toBe(true);
+      expect(result.checks).toHaveLength(1);
     });
 
     test('should execute Import Module node', async () => {
@@ -603,38 +606,62 @@ describe('WorkflowEngine - Additional Coverage', () => {
     });
 
     test('should execute Start Process node', async () => {
-      const node = {
-        id: 'startproc',
-        type: 'Start Process',
-        config: {
-          command: 'node',
-          args: ['--version']
-        }
+      // Mock child_process.spawn
+      const { spawn } = require('child_process');
+      const mockSpawn = jest.fn();
+      const mockChild = {
+        on: jest.fn((event, callback) => {
+          if (event === 'close') {
+            // Simulate successful process exit
+            callback(0);
+          }
+        }),
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() }
       };
-      const connections = [];
-      const workflow = { 
-        id: 'test', 
-        cancelled: false,
-        nodes: [node],
-        connections: connections,
-        io: mockIo,
-        emitFn: (event, data) => {},
-        context: {
-            runId: 'test',
-            variables: {},
-            values: {},
-            assetsDir: './test'
-        },
-        executionState: new Map()
-      };
-
-      const result = await adapters.executeStartProcess(node, workflow, connections);
+      mockSpawn.mockReturnValue(mockChild);
       
-      expect(result.processId).toBeDefined();
-      expect(result.command).toBe('node');
-      expect(result.args).toEqual(['--version']);
-      expect(result.status).toBeDefined();
-    });
+      // Temporarily replace spawn
+      const originalSpawn = require('child_process').spawn;
+      require('child_process').spawn = mockSpawn;
+      
+      try {
+        const node = {
+          id: 'startproc',
+          type: 'Start Process',
+          config: {
+            command: 'node',
+            args: ['--version']
+          }
+        };
+        const connections = [];
+        const workflow = { 
+          id: 'test', 
+          cancelled: false,
+          nodes: [node],
+          connections: connections,
+          startTime: new Date().toISOString(),
+          metrics: {
+            startTime: new Date().toISOString(),
+            nodeExecutions: 0,
+            totalNodes: 1,
+            completedNodes: 0,
+            failedNodes: 0
+          }
+        };
+
+        const result = await adapters.executeStartProcess(node, workflow, connections);
+        
+        expect(result).toBeDefined();
+        expect(result.command).toBe('node');
+        expect(result.args).toEqual(['--version']);
+        expect(result.exitCode).toBe(0);
+        expect(result.status).toBe('completed');
+      } finally {
+        // Restore original spawn
+        require('child_process').spawn = originalSpawn;
+      }
+    });  
 
     test('should execute Kill Process node', async () => {
       const node = {

@@ -1,0 +1,44 @@
+{
+  "name": "Logger Plugin",
+  "version": "1.0.0",
+  "description": "Logs workflow data with timestamps and configurable levels",
+  "author": "Runtime Hub Team",
+  "category": "Utility",
+  "main": "index.js",
+  "nodes": [
+    {
+      "type": "Logger",
+      "description": "Logs incoming data with timestamp and configurable log level",
+      "category": "Utility",
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any",
+          "description": "Data to log"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "any",
+          "description": "Passthrough output (same as input)"
+        }
+      ],
+      "config": [
+        {
+          "name": "level",
+          "type": "select",
+          "options": ["info", "warn", "error"],
+          "default": "info",
+          "description": "Log level"
+        },
+        {
+          "name": "prefix",
+          "type": "text",
+          "default": "",
+          "description": "Optional prefix for log entries"
+        }
+      ]
+    }
+  ]
+}

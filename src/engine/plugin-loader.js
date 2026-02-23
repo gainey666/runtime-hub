@@ -71,6 +71,7 @@ class PluginLoader {
         try {
             const pluginPath = path.join(this.pluginsDir, pluginDir);
             const indexPath = path.join(pluginPath, 'index.js');
+            const manifestPath = path.join(pluginPath, 'manifest.json');
 
             if (!fs.existsSync(indexPath)) {
                 console.warn(`⚠️ Plugin ${pluginDir} missing index.js, skipping`);
@@ -79,21 +80,45 @@ class PluginLoader {
 
             // Load plugin module
             const pluginModule = require(indexPath);
+            
+            // Load manifest if it exists
+            let manifest = {};
+            if (fs.existsSync(manifestPath)) {
+                try {
+                    const manifestContent = fs.readFileSync(manifestPath, 'utf8');
+                    manifest = JSON.parse(manifestContent);
+                } catch (error) {
+                    console.warn(`⚠️ Plugin ${pluginDir} has invalid manifest.json, using defaults`);
+                }
+            }
+
+            // Combine manifest nodes with plugin module nodes
+            const allNodes = [
+                ...(manifest.nodes || []),
+                ...(pluginModule.nodes || [])
+            ];
+
+            // Create combined plugin object
+            const combinedPlugin = {
+                ...pluginModule,
+                ...manifest,
+                nodes: allNodes
+            };
 
             // Validate plugin structure
-            if (!this.validatePlugin(pluginModule, pluginDir)) {
+            if (!this.validatePlugin(combinedPlugin, pluginDir)) {
                 return;
             }
 
             // Register plugin
-            this.plugins.set(pluginDir, pluginModule);
+            this.plugins.set(pluginDir, combinedPlugin);
 
             // Register plugin nodes
-            for (const node of pluginModule.nodes || []) {
+            for (const node of combinedPlugin.nodes) {
                 this.registerNode(node, pluginDir);
             }
 
-            console.log(`✅ Loaded plugin: ${pluginModule.name} v${pluginModule.version}`);
+            console.log(`✅ Loaded plugin: ${combinedPlugin.name} v${combinedPlugin.version}`);
 
         } catch (error) {
             console.error(`❌ Error loading plugin ${pluginDir}:`, error);

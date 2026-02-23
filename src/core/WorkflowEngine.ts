@@ -63,7 +63,7 @@ class WorkflowEngine extends EventEmitter {
     
     // Workflow history for analytics
     this.workflowHistory = [];
-    this.maxHistorySize = 1000;
+    this.maxHistorySize = 500; // Auto-prune at 500 entries
     
     // Initialize node executors
     this.initializeNodeExecutors();
@@ -200,7 +200,39 @@ class WorkflowEngine extends EventEmitter {
     } catch (error) {
       this.emit('nodeError', workflow.id, node, error);
       this.broadcastNodeUpdate(workflow.id, node.id, 'error', node, error);
-      throw error;
+
+      // Handle error based on node's onError configuration
+      const onError = (node.config as any)?.onError || 'stop';
+      
+      switch (onError) {
+        case 'skip':
+          console.log(`⚠️ Skipping failed node ${node.id} due to onError: skip configuration`);
+          // Don't throw error, continue with next nodes
+          break;
+          
+        case 'retry':
+          const maxRetries = (node.config as any)?.maxRetries || 3;
+          const retryCount = (node as any).retryCount || 0;
+          
+          if (retryCount < maxRetries) {
+            (node as any).retryCount = retryCount + 1;
+            console.log(`🔄 Retrying node ${node.id} (${retryCount + 1}/${maxRetries})`);
+            
+            // Wait a bit before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Retry the node execution
+            return this.executeNode(node, workflow);
+          } else {
+            console.log(`❌ Node ${node.id} failed after ${maxRetries} retries`);
+            throw error;
+          }
+          
+        case 'stop':
+        default:
+          // Original behavior - stop the workflow
+          throw error;
+      }
     } finally {
       const executionTime = Date.now() - startTime;
       this.emit('nodeExecutionTime', workflow.id, node, executionTime);
@@ -731,6 +763,31 @@ class WorkflowEngine extends EventEmitter {
 
   getWorkflowHistory(): Workflow[] {
     return [...this.workflowHistory];
+  }
+
+  clearWorkflowHistory(): void {
+    this.workflowHistory = [];
+  }
+
+  loadPlugins(): Promise<void> {
+    // Load plugins using the plugin loader
+    const PluginLoader = require('../engine/plugin-loader');
+    const pluginLoader = new PluginLoader();
+    
+    return pluginLoader.loadPlugins().then(() => {
+      console.log('🔌 Plugin loading complete');
+      
+      // Register plugin nodes
+      for (const [nodeType, nodeDef] of pluginLoader.nodes) {
+        if (!this.nodeExecutors.has(nodeType)) {
+          this.nodeExecutors.set(nodeType, nodeDef.executor);
+          console.log(`🔌 Registered plugin node type: ${nodeType}`);
+        }
+      }
+    }).catch((error: Error) => {
+      console.error('❌ Plugin loading failed:', error);
+      throw error;
+    });
   }
 }
 

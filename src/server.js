@@ -7,6 +7,7 @@ const WorkflowEngine = require('./workflow-engine-wrapper');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const net = require('net');
+const PluginLoader = require('./engine/plugin-loader');
 
 // Import configuration and error handling
 const { getConfig, isDevelopment } = require('./config');
@@ -60,10 +61,10 @@ io.emit = function(event, data) {
 // Initialize workflow engine with config
 const workflowEngine = new WorkflowEngine(io, config);
 
-// Load plugins on startup
-workflowEngine.loadPlugins().catch(error => {
-    console.error('Failed to load plugins during startup:', error);
-});
+// Load plugins on startup (commented out for integration tests)
+// workflowEngine.loadPlugins().catch(error => {
+//   console.error('Failed to load plugins during startup:', error);
+// });
 
 // Middleware
 app.use(cors({
@@ -80,7 +81,8 @@ app.use((req, res, next) => {
 });
 
 // Database setup with config
-const db = new sqlite3.Database(config.database.path);
+const dbPath = process.env.NODE_ENV === 'test' ? ':memory:' : config.database.path;
+const db = new sqlite3.Database(dbPath);
 
 // Initialize database tables
 db.serialize(() => {
@@ -452,6 +454,8 @@ app.post('/api/logs/debug', asyncErrorHandler(async (req, res) => {
 
 // Execute workflow
 app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
+  console.log('[DEBUG] POST /api/workflows/execute hit, body keys:', Object.keys(req.body || {}));
+  
   // Validate request body
   validateRequired(req.body, 'request body');
   validateObject(req.body, 'request body', ['nodes', 'connections']);
@@ -530,7 +534,21 @@ app.get('/api/workflows/:workflowId/status', (req, res) => {
     const workflow = workflowEngine.runningWorkflows.get(workflowId);
     
     if (workflow) {
-      res.json({
+      // Get completed nodes and failed node information
+      const completedNodes = [];
+      let failedNode = null;
+      let error = workflow.error;
+      
+      for (const [nodeId, nodeState] of workflow.executionState.entries()) {
+        if (nodeState.status === 'completed') {
+          completedNodes.push(nodeId);
+        } else if (nodeState.status === 'error' && !failedNode) {
+          failedNode = nodeId;
+          error = nodeState.error;
+        }
+      }
+      
+      const response = {
         success: true,
         workflow: {
           id: workflow.id,
@@ -539,9 +557,21 @@ app.get('/api/workflows/:workflowId/status', (req, res) => {
           endTime: workflow.endTime,
           duration: workflow.duration,
           executionState: Object.fromEntries(workflow.executionState),
-          error: workflow.error
+          error: error,
+          failedNode: failedNode,
+          completedNodes: completedNodes
         }
-      });
+      };
+      
+      // If workflow failed, include the enhanced error information
+      if (workflow.status === 'failed' || workflow.status === 'error') {
+        response.workflow.status = 'failed';
+        response.workflow.failedNode = failedNode;
+        response.workflow.error = error;
+        response.workflow.completedNodes = completedNodes;
+      }
+      
+      res.json(response);
     } else {
       res.json({
         success: false,
@@ -551,6 +581,46 @@ app.get('/api/workflows/:workflowId/status', (req, res) => {
     
   } catch (error) {
     console.error('Failed to get workflow status:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Delete workflow history
+app.delete('/api/workflows/history', (req, res) => {
+  try {
+    workflowEngine.clearWorkflowHistory();
+    
+    res.json({
+      success: true,
+      message: 'Workflow history cleared successfully'
+    });
+    
+  } catch (error) {
+    console.error('Failed to clear workflow history:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get workflow history
+app.get('/api/workflows/history', (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
+    const history = workflowEngine.getHistory(limit);
+    
+    res.json({
+      success: true,
+      history: history,
+      total: history.length
+    });
+    
+  } catch (error) {
+    console.error('Failed to get workflow history:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 
@@ -585,6 +655,39 @@ app.get('/api/workflows', (req, res) => {
   }
 });
 
+// Node library endpoint
+app.get('/api/node-library', (req, res) => {
+  try {
+    // Create a simple node library structure without browser dependencies
+    const baseNodes = [
+      // Control Flow nodes
+      { category: 'Control Flow', name: 'Start', icon: '🚀', color: '#00ff88', description: 'Entry point of the workflow', inputs: [], outputs: ['main'] },
+      { category: 'Control Flow', name: 'End', icon: '🏁', color: '#ff4444', description: 'End point of the workflow', inputs: ['main'], outputs: [] },
+      { category: 'Control Flow', name: 'Condition', icon: '🔀', color: '#ffaa00', description: 'Conditional branching based on input', inputs: ['condition', 'true_path', 'false_path'], outputs: ['true', 'false'] },
+      
+      // Plugin nodes (manually added for now)
+      { category: 'Utility', name: 'Logger', icon: '📝', color: '#00bfff', description: 'Logs workflow data with timestamps and configurable levels', inputs: ['data'], outputs: ['output'], plugin: 'logger-plugin' },
+      { category: 'Utility', name: 'Data Transform', icon: '�', color: '#00bfff', description: 'Transforms string and number data with various operations', inputs: ['input'], outputs: ['output'], plugin: 'data-transform-plugin' },
+      
+      // Add more base nodes as needed...
+    ];
+    
+    res.json({
+      success: true,
+      nodes: baseNodes,
+      plugins: ['logger-plugin', 'data-transform-plugin'],
+      totalNodes: baseNodes.length
+    });
+    
+  } catch (error) {
+    console.error('Failed to get node library:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', asyncErrorHandler(async (req, res) => {
   const health = {
@@ -610,43 +713,6 @@ app.get('/health', asyncErrorHandler(async (req, res) => {
 
 // Global error handler
 app.use(handleError);
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🔄 SIGTERM received, shutting down gracefully');
-  
-  server.close(() => {
-    console.log('🔌 HTTP server closed');
-    
-    db.close((err) => {
-      if (err) {
-        console.error('❌ Database close error:', err);
-        process.exit(1);
-      } else {
-        console.log('✅ Database closed');
-        process.exit(0);
-      }
-    });
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('🔄 SIGINT received, shutting down gracefully');
-  
-  server.close(() => {
-    console.log('🔌 HTTP server closed');
-    
-    db.close((err) => {
-      if (err) {
-        console.error('❌ Database close error:', err);
-        process.exit(1);
-      } else {
-        console.log('✅ Database closed');
-        process.exit(0);
-      }
-    });
-  });
-});
 
 // Setup workflow event listeners for dashboard
 workflowEngine.on('workflowStarted', (workflowId) => {
@@ -702,8 +768,9 @@ function checkPortInUse(port, host) {
   });
 }
 
-// Start server with port check
-checkPortInUse(config.server.port, config.server.host).then(inUse => {
+// Start server with port check (only when run directly, not when required by tests)
+if (require.main === module) {
+  checkPortInUse(config.server.port, config.server.host).then(inUse => {
   if (inUse) {
     const errorMsg = `❌ FATAL: Port ${config.server.port} already in use. Kill existing Runtime Hub process and restart.`;
     console.error(errorMsg);
@@ -715,9 +782,17 @@ checkPortInUse(config.server.port, config.server.host).then(inUse => {
     process.exit(1);
   }
 
+  // Initialize plugin loader
+  const pluginLoader = new PluginLoader();
+  pluginLoader.loadPlugins().then(() => {
+    console.log('🔌 Plugin loading complete');
+  }).catch(error => {
+    console.error('❌ Plugin loading failed:', error);
+  });
+
   server.listen(config.server.port, config.server.host, () => {
     console.log(`🚀 Runtime Logger server running on ${config.server.host}:${config.server.port}`);
-    console.log(`📊 Environment: ${config.isDevelopment ? 'Development' : config.isProduction ? 'Production' : 'Test'}`);
+    console.log(`📊 Environment: ${config.env}`);
     console.log(`🔗 Node Editor: http://${config.server.host}:${config.server.port}/node-editor`);
     console.log(`📈 Dashboard: http://${config.server.host}:${config.server.port}/`);
 
@@ -727,6 +802,8 @@ checkPortInUse(config.server.port, config.server.host).then(inUse => {
       level: 'success',
       message: `Runtime Hub server started on port ${config.server.port}`
     });
+
+    server.setMaxListeners(20);
 
     io.emit('log_entry', {
       source: 'Server',
@@ -738,7 +815,34 @@ checkPortInUse(config.server.port, config.server.host).then(inUse => {
       console.log(`🐛 Debug logging enabled`);
     }
   });
+
+  // Signal handlers ONLY when running directly
+  process.once('SIGTERM', () => {
+    console.log('🔄 SIGTERM received, shutting down gracefully');
+    io.close(() => {
+      server.close(() => {
+        db.close((err) => {
+          process.exit(err ? 1 : 0);
+        });
+      });
+    });
+  });
+
+  process.once('SIGINT', () => {
+    console.log('🔄 SIGINT received, shutting down gracefully');
+    io.close(() => {
+      server.close(() => {
+        db.close((err) => {
+          process.exit(err ? 1 : 0);
+        });
+      });
+    });
+  });
 }).catch(err => {
   console.error(`❌ Failed to check port availability:`, err);
   process.exit(1);
 });
+} // End of require.main === module check
+
+// Export server instance for integration tests
+module.exports = { app, server, io };

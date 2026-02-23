@@ -7,8 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      CI: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,25 +14,4 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Run tests
-        run: |
-          npx jest tests/unit/workflow-engine/additional.test.js tests/unit/workflow-engine/index.test.js --forceExit --json --outputFile=/tmp/results.json || true
-          echo "=== JSON Results ==="
-          cat /tmp/results.json
-          echo "=== End JSON Results ==="
-          node -e "
-            const r = require('/tmp/results.json');
-            console.log('Test Suites:', r.numPassedTestSuites, 'passed,', r.numFailedTestSuites, 'failed');
-            console.log('Tests:', r.numPassedTests, 'passed,', r.numFailedTests, 'failed');
-            console.log('Failed test suites:', r.testResults.filter(t => t.status === 'failed').map(t => t.name));
-            console.log('Failed tests:', r.testResults.flatMap(t => t.assertionResults.filter(a => a.status === 'failed')).map(a => a.fullName));
-            if (r.numFailedTestSuites > 0) { 
-              console.error('REAL test suite failures found');
-              process.exit(1); 
-            }
-            if (r.numFailedTests > 0) { 
-              console.error('REAL test failures found');
-              process.exit(1); 
-            }
-            console.log('All tests passed - worker warning is not a real failure');
-          "
+      - run: npm test

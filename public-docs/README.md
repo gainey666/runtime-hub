@@ -34,11 +34,12 @@ npm start -- --dev
 - No browser required
 
 ✅ **Visual Node Editor** (Main Window)
-- 28 nodes in 11 categories
+- 33+ nodes in 11 categories (including plugins)
 - Real-time socket.io connection
 - Search & filter nodes by category
 - Drag-drop interface
 - Canvas with grid
+- Plugin system for extensibility
 
 ✅ **System Logs** (Ctrl+L)
 - Live socket.io connection (green dot indicator)
@@ -52,6 +53,13 @@ npm start -- --dev
 - Matching gradient UI theme
 - OCR integration ready
 - Session controls (Start/Stop/Pause)
+
+✅ **Plugin System**
+- Extensible architecture for custom nodes
+- Logger plugin for data logging
+- Data Transform plugin for data processing
+- Plugin development documentation
+- Automatic plugin loading from plugins/ directory
 
 ✅ **Technical**
 - Socket.IO working on all windows
@@ -89,7 +97,20 @@ npm start -- --dev
               │ Auto-Clicker API │  │  Python Agent   │
               │   (Port 3001)    │  │   (Optional)    │
               └──────────────────┘  └─────────────────┘
+                                   │
+                         ┌─────────┴──────────┐
+                         ▼                    ▼
+              ┌──────────────────┐  ┌─────────────────┐
+              │  Workflow Engine │  │  Plugin System  │
+              │  (Modular)       │  │  (Extensible)   │
+              └──────────────────┘  └─────────────────┘
 ```
+
+**Modular Components:**
+- **Engine Core:** `src/engine/ports.js` + `src/engine/node-adapters.js`
+- **Plugin Loader:** `src/engine/plugin-loader.js`
+- **Plugin Directory:** `plugins/` (auto-loaded)
+- **Node Library:** `public/node-library.js`
 
 ---
 
@@ -100,15 +121,29 @@ src/
 ├── server.js              # Main server (port 3000)
 ├── auto-clicker-api.js    # Auto-clicker API (port 3001)
 ├── workflow-engine-wrapper.js
+├── engine/
+│   ├── ports.js           # Port definitions
+│   ├── node-adapters.js   # Node executors
+│   └── plugin-loader.js  # Plugin system
 └── core/
     ├── WorkflowEngine.ts
     └── auto-clicker/
 
+plugins/
+├── logger-plugin/         # Data logging plugin
+├── data-transform-plugin/  # Data transformation plugin
+└── hello-world/           # Example plugin
+
 public/
-├── node-editor.html       # Visual editor (1,750 lines)
+├── node-editor.html       # Visual editor (1,750+ lines)
 ├── auto-clicker-test.html # Test UI
-├── node-library.js        # 50+ node definitions
+├── node-library.js        # 33+ node definitions
 └── error-logger.js
+
+public-docs/
+├── PLUGIN-DEVELOPMENT.md  # Plugin development guide
+├── API-REFERENCE.md       # Complete API documentation
+└── README.md              # This file
 
 docs/
 ├── PROJECT_STATUS_2026-02-21.md  # Full status report
@@ -119,7 +154,7 @@ docs/
 
 ---
 
-## 🎨 Node Categories (50+ nodes)
+## 🎨 Node Categories (33+ nodes)
 
 - **Control Flow** - Start, End, Loop, Condition, Delay
 - **Python** - Execute Python, Python Function
@@ -129,6 +164,7 @@ docs/
 - **Database** - Query, Insert, Update
 - **Automation** - Wait, Sleep, Repeat
 - **Data Processing** - Transform, Filter, Map
+- **Plugins** - Logger, Data Transform, Custom Plugins
 
 ---
 

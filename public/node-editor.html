@@ -48,8 +48,6 @@
             background: rgba(255,255,255,0.1);
             border-radius: 8px;
             padding: 10px;
-            color: white;
-            font-size: 12px;
         }
         
         .node-port {
@@ -66,6 +64,31 @@
         .node-port:hover {
             transform: scale(1.3);
             background: #34d399;
+        }
+        
+        .node-port.compatible {
+            background: #10b981 !important;
+            border-color: #10b981 !important;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5) !important;
+            animation: compatible-pulse 1s ease-in-out infinite;
+        }
+        
+        .node-port.incompatible {
+            background: #ef4444 !important;
+            border-color: #ef4444 !important;
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        @keyframes compatible-pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            }
+            50% {
+                transform: scale(1.2);
+                box-shadow: 0 0 15px rgba(16, 185, 129, 0.8);
+            }
         }
         
         .node-port.input {
@@ -258,11 +281,10 @@
                     <i class="fas fa-trash mr-2"></i>Clear
                 </button>
                 <select onchange="loadTemplate(this.value)" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors cursor-pointer">
-                    <option value="">Templates...</option>
-                    <option value="auto-clicker">Auto-Clicker</option>
-                    <option value="web-scraper">Web Scraper</option>
-                    <option value="file-processor">File Processor</option>
-                    <option value="api-monitor">API Monitor</option>
+                    <option value="">New Workflow...</option>
+                    <option value="blank">Blank Canvas</option>
+                    <option value="hello-world">Hello World</option>
+                    <option value="data-pipeline">Data Pipeline</option>
                 </select>
                 <div class="border-l border-gray-600 mx-2"></div>
                 <button onclick="undo()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors">
@@ -502,12 +524,18 @@
             });
             
             socket.on('connect', () => {
-                document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle mr-1 text-green-400"></i>Connected';
+                const statusElement = document.getElementById('connectionStatus');
+                if (statusElement) {
+                    statusElement.innerHTML = '<i class="fas fa-circle mr-1 text-green-400"></i>Connected';
+                }
                 document.getElementById('workflowStatus').textContent = 'Ready';
             });
             
             socket.on('disconnect', () => {
-                document.getElementById('connectionStatus').innerHTML = '<i class="fas fa-circle mr-1 text-red-400"></i>Disconnected';
+                const statusElement = document.getElementById('connectionStatus');
+                if (statusElement) {
+                    statusElement.innerHTML = '<i class="fas fa-circle mr-1 text-red-400"></i>Disconnected';
+                }
                 document.getElementById('workflowStatus').textContent = 'Offline';
             });
             
@@ -543,19 +571,25 @@
             try {
                 console.log('🎨 initPalette() called');
                 const palette = document.getElementById('nodePalette');
-                const searchTerm = document.getElementById('searchNodes').value.toLowerCase();
-
-                palette.innerHTML = '';
+                if (palette) {
+                    palette.innerHTML = '';
+                }
 
                 // Check if NODE_LIBRARY is available
                 console.log('📚 Checking NODE_LIBRARY...', typeof NODE_LIBRARY, NODE_LIBRARY ? NODE_LIBRARY.length : 'undefined');
                 if (typeof NODE_LIBRARY === 'undefined') {
-                    palette.innerHTML = '<div class="p-4 text-red-400">❌ NODE_LIBRARY not loaded. Check console.</div>';
+                    const palette = document.getElementById('nodePalette');
+                    if (palette) {
+                        palette.innerHTML = '<div class="p-4 text-red-400">❌ NODE_LIBRARY not loaded. Check console.</div>';
+                    }
                     throw new Error('NODE_LIBRARY is not defined. Check if node-library.js loaded properly.');
                 }
 
                 if (!NODE_LIBRARY || NODE_LIBRARY.length === 0) {
-                    palette.innerHTML = '<div class="p-4 text-yellow-400">⚠️ NODE_LIBRARY is empty. No nodes available.</div>';
+                    const palette = document.getElementById('nodePalette');
+                    if (palette) {
+                        palette.innerHTML = '<div class="p-4 text-yellow-400">⚠️ NODE_LIBRARY is empty. No nodes available.</div>';
+                    }
                     return;
                 }
                 
@@ -580,21 +614,27 @@
                     
                     const header = document.createElement('div');
                     header.className = 'category-header';
-                    header.innerHTML = `<i class="fas ${getCategoryIcon(category)} mr-2"></i>${category}`;
+                    header.textContent = `${getCategoryIcon(category)} ${category}`;
                     categoryDiv.appendChild(header);
                     
                     categoryNodes.forEach(node => {
                         const item = document.createElement('div');
                         item.className = 'palette-item';
                         item.draggable = true;
-                        item.innerHTML = `
-                            <div class="font-semibold">${node.name}</div>
-                            <div class="text-xs text-gray-400 mt-1">${node.description}</div>
-                            <div class="text-xs text-green-400 mt-1">
-                                <i class="fas fa-sign-in-alt mr-1"></i>${node.inputs.length} inputs / 
-                                <i class="fas fa-sign-out-alt mr-1"></i>${node.outputs.length} outputs
-                            </div>
-                        `;
+                        const nameDiv = document.createElement('div');
+                        nameDiv.className = 'font-semibold';
+                        nameDiv.textContent = node.name;
+                        item.appendChild(nameDiv);
+                        
+                        const descDiv = document.createElement('div');
+                        descDiv.className = 'text-xs text-gray-400 mt-1';
+                        descDiv.textContent = node.description;
+                        item.appendChild(descDiv);
+                        
+                        const typeDiv = document.createElement('div');
+                        typeDiv.className = 'text-xs text-green-400 mt-1';
+                        typeDiv.innerHTML = `<i class="fas fa-sign-in-alt mr-1"></i>${node.inputs.length} inputs / <i class="fas fa-sign-out-alt mr-1"></i>${node.outputs.length} outputs`;
+                        item.appendChild(typeDiv);
                         
                         item.addEventListener('dragstart', (e) => {
                             e.dataTransfer.setData('nodeType', JSON.stringify(node));
@@ -693,27 +733,59 @@
 
         // Highlight node during execution
         function highlightNode(nodeElement, status) {
-            // Remove all execution classes
+            // Remove all execution classes and indicators
             nodeElement.classList.remove('node-running', 'node-completed', 'node-error');
             
-            // Add appropriate class
+            // Remove existing status indicator if any
+            const existingIndicator = nodeElement.querySelector('.node-status-indicator');
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+            
+            // Add appropriate class and indicator
             switch (status) {
                 case 'running':
                     nodeElement.classList.add('node-running');
+                    addNodeStatusIndicator(nodeElement, 'running');
                     break;
                 case 'completed':
                     nodeElement.classList.add('node-completed');
+                    addNodeStatusIndicator(nodeElement, 'success');
                     break;
                 case 'error':
                     nodeElement.classList.add('node-error');
+                    addNodeStatusIndicator(nodeElement, 'error');
+                    break;
+                default:
+                    // Clear all execution states
                     break;
             }
+        }
+
+        // Add status indicator to node
+        function addNodeStatusIndicator(nodeElement, status) {
+            const indicator = document.createElement('div');
+            indicator.className = `node-status-indicator ${status}`;
+            
+            if (status === 'success') {
+                indicator.innerHTML = '✓';
+            } else if (status === 'error') {
+                indicator.innerHTML = '✗';
+            } else if (status === 'running') {
+                indicator.innerHTML = '⚡';
+            }
+            
+            nodeElement.appendChild(indicator);
         }
 
         // Clear all node highlights
         function clearNodeHighlights() {
             document.querySelectorAll('.node').forEach(node => {
                 node.classList.remove('node-running', 'node-completed', 'node-error');
+                
+                // Remove status indicators
+                const indicators = node.querySelectorAll('.node-status-indicator');
+                indicators.forEach(indicator => indicator.remove());
             });
         }
 
@@ -1028,12 +1100,86 @@
 
                 const path = `M ${connectionStart.x} ${connectionStart.y} Q ${(connectionStart.x + endX) / 2} ${(connectionStart.y + endY) / 2 - 50} ${endX} ${endY}`;
                 tempConnection.setAttribute('d', path);
+                
+                // Check for port compatibility validation
+                validatePortCompatibility(x, y);
                 rafId = null;
             });
         }
 
+        // Validate port compatibility during connection drag
+        function validatePortCompatibility(mouseX, mouseY) {
+            // Clear previous validation states
+            document.querySelectorAll('.node-port').forEach(port => {
+                port.classList.remove('compatible', 'incompatible');
+            });
+
+            // Find port under mouse
+            const element = document.elementFromPoint(mouseX, mouseY);
+            if (element && element.classList.contains('node-port')) {
+                const targetNodeId = element.dataset.nodeId;
+                const targetPortType = element.dataset.portType;
+                const targetPortIndex = parseInt(element.dataset.portIndex);
+                
+                // Check if connection is valid
+                const isValid = isConnectionValid(connectionStart.nodeId, connectionStart.portType, connectionStart.portIndex, targetNodeId, targetPortType, targetPortIndex);
+                
+                if (isValid) {
+                    element.classList.add('compatible');
+                } else {
+                    element.classList.add('incompatible');
+                }
+            }
+        }
+
+        // Check if connection between ports is valid
+        function isConnectionValid(fromNodeId, fromPortType, fromPortIndex, toNodeId, toPortType, toPortIndex) {
+            // Can't connect to same node
+            if (fromNodeId === toNodeId) return false;
+            
+            // Can't connect same port types (output to output, input to input)
+            if (fromPortType === toPortType) return false;
+            
+            // Find the nodes
+            const fromNode = nodes.find(n => n.id === fromNodeId);
+            const toNode = nodes.find(n => n.id === toNodeId);
+            
+            if (!fromNode || !toNode) return false;
+            
+            // Get port types
+            const fromPort = fromPortType === 'output' ? fromNode.outputs[fromPortIndex] : fromNode.inputs[fromPortIndex];
+            const toPort = toPortType === 'input' ? toNode.inputs[toPortIndex] : toNode.outputs[toPortIndex];
+            
+            if (!fromPort || !toPort) return false;
+            
+            // Basic type compatibility check (can be enhanced)
+            const fromType = fromPort.type || 'any';
+            const toType = toPort.type || 'any';
+            
+            // 'any' type is compatible with everything
+            if (fromType === 'any' || toType === 'any') return true;
+            
+            // Same types are compatible
+            if (fromType === toType) return true;
+            
+            // Flow types are compatible with each other
+            if ((fromType === 'flow' && toType === 'flow') || 
+                (fromType === 'any' && toType === 'flow') || 
+                (fromType === 'flow' && toType === 'any')) {
+                return true;
+            }
+            
+            // For other types, be more permissive (don't block, just inform)
+            return true;
+        }
+
         function handleConnectionEnd(e) {
             if (!isConnecting || !connectionStart) return;
+            
+            // Clear validation states
+            document.querySelectorAll('.node-port').forEach(port => {
+                port.classList.remove('compatible', 'incompatible');
+            });
             
             const target = e.target;
             if (target.classList.contains('node-port')) {
@@ -1571,74 +1717,104 @@
             saveState();
 
             switch(templateName) {
-                case 'auto-clicker':
-                    loadDefaultAutoClickerWorkflow();
+                case 'blank':
+                    // Blank Canvas - empty workflow
+                    nodes = [];
+                    connections = [];
+                    nodeIdCounter = 1;
+                    connectionIdCounter = 1;
                     break;
 
-                case 'web-scraper':
+                case 'hello-world':
+                    // Hello World - simple 2-node workflow (trigger → log output)
                     nodes = [
-                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
-                        { id: 'node_2', type: 'HTTP Request', category: 'Network', x: 300, y: 100, inputs: [{ name: 'url', type: 'string', value: 'https://example.com' }, { name: 'options', type: 'object', value: '' }], outputs: [{ name: 'response', type: 'object' }, { name: 'error', type: 'error' }], config: { method: 'GET', url: 'https://example.com' } },
-                        { id: 'node_3', type: 'Parse Text', category: 'Data Processing', x: 550, y: 100, inputs: [{ name: 'text', type: 'string', value: '' }, { name: 'pattern', type: 'string', value: '' }], outputs: [{ name: 'result', type: 'any' }], config: {} },
-                        { id: 'node_4', type: 'Write Log', category: 'Logging', x: 800, y: 100, inputs: [{ name: 'message', type: 'string', value: '' }], outputs: [{ name: 'done', type: 'flow' }], config: {} },
-                        { id: 'node_5', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
+                        { 
+                            id: 'node_1', 
+                            type: 'Start', 
+                            category: 'Control Flow', 
+                            x: 100, 
+                            y: 200, 
+                            inputs: [], 
+                            outputs: [{ name: 'main', type: 'flow' }], 
+                            config: {} 
+                        },
+                        { 
+                            id: 'node_2', 
+                            type: 'Logger', 
+                            category: 'Utility', 
+                            x: 400, 
+                            y: 200, 
+                            inputs: [{ name: 'data', type: 'any', value: 'Hello World!' }], 
+                            outputs: [{ name: 'output', type: 'any' }], 
+                            config: { level: 'info', prefix: 'Hello World' } 
+                        }
+                    ];
+                    connections = [
+                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } }
+                    ];
+                    nodeIdCounter = 3;
+                    connectionIdCounter = 2;
+                    break;
+
+                case 'data-pipeline':
+                    // Data Pipeline - 4-node workflow showing data flowing through transform nodes
+                    nodes = [
+                        { 
+                            id: 'node_1', 
+                            type: 'Start', 
+                            category: 'Control Flow', 
+                            x: 50, 
+                            y: 150, 
+                            inputs: [], 
+                            outputs: [{ name: 'main', type: 'flow' }], 
+                            config: {} 
+                        },
+                        { 
+                            id: 'node_2', 
+                            type: 'Data Transform', 
+                            category: 'Utility', 
+                            x: 300, 
+                            y: 150, 
+                            inputs: [{ name: 'input', type: 'string', value: 'Hello World!' }], 
+                            outputs: [{ name: 'output', type: 'string' }], 
+                            config: { operation: 'uppercase' } 
+                        },
+                        { 
+                            id: 'node_3', 
+                            type: 'Data Transform', 
+                            category: 'Utility', 
+                            x: 550, 
+                            y: 150, 
+                            inputs: [{ name: 'input', type: 'string', value: '' }], 
+                            outputs: [{ name: 'output', type: 'string' }], 
+                            config: { operation: 'trim' } 
+                        },
+                        { 
+                            id: 'node_4', 
+                            type: 'Logger', 
+                            category: 'Utility', 
+                            x: 800, 
+                            y: 150, 
+                            inputs: [{ name: 'data', type: 'any', value: '' }], 
+                            outputs: [{ name: 'output', type: 'any' }], 
+                            config: { level: 'info', prefix: 'Data Pipeline Result' } 
+                        }
                     ];
                     connections = [
                         { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
                         { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
-                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
-                        { id: 'connection_4', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_5', portIndex: 0 } }
+                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } }
                     ];
-                    nodeIdCounter = 6;
-                    connectionIdCounter = 5;
+                    nodeIdCounter = 5;
+                    connectionIdCounter = 4;
                     break;
 
-                case 'file-processor':
-                    nodes = [
-                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
-                        { id: 'node_2', type: 'List Directory', category: 'File System', x: 300, y: 100, inputs: [{ name: 'path', type: 'string', value: './' }], outputs: [{ name: 'files', type: 'array' }], config: { path: './' } },
-                        { id: 'node_3', type: 'Loop', category: 'Control Flow', x: 550, y: 100, inputs: [{ name: 'input', type: 'flow', value: '' }, { name: 'loop_body', type: 'flow', value: '' }], outputs: [{ name: 'item', type: 'any' }, { name: 'loop_complete', type: 'flow' }], config: { loopType: 'for', maxIterations: 1000 } },
-                        { id: 'node_4', type: 'Read File', category: 'File System', x: 800, y: 100, inputs: [{ name: 'path', type: 'string', value: '' }], outputs: [{ name: 'content', type: 'string' }, { name: 'error', type: 'error' }], config: {} },
-                        { id: 'node_5', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
-                    ];
-                    connections = [
-                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
-                        { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
-                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
-                        { id: 'connection_4', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_5', portIndex: 0 } }
-                    ];
-                    nodeIdCounter = 6;
-                    connectionIdCounter = 5;
-                    break;
-
-                case 'api-monitor':
-                    nodes = [
-                        { id: 'node_1', type: 'Start', category: 'Control Flow', x: 50, y: 100, inputs: [], outputs: [{ name: 'main', type: 'flow' }], config: {} },
-                        { id: 'node_2', type: 'Loop', category: 'Control Flow', x: 300, y: 100, inputs: [{ name: 'input', type: 'flow', value: '' }, { name: 'loop_body', type: 'flow', value: '' }], outputs: [{ name: 'item', type: 'any' }, { name: 'loop_complete', type: 'flow' }], config: { loopType: 'while', maxIterations: 1000 } },
-                        { id: 'node_3', type: 'HTTP Request', category: 'Network', x: 550, y: 50, inputs: [{ name: 'url', type: 'string', value: 'http://localhost:3001/api/status' }, { name: 'options', type: 'object', value: '' }], outputs: [{ name: 'response', type: 'object' }, { name: 'error', type: 'error' }], config: { method: 'GET', url: 'http://localhost:3001/api/status' } },
-                        { id: 'node_4', type: 'Delay', category: 'Control Flow', x: 800, y: 50, inputs: [{ name: 'duration', type: 'number', value: '5000' }], outputs: [{ name: 'done', type: 'flow' }], config: { duration: 5000 } },
-                        { id: 'node_5', type: 'Write Log', category: 'Logging', x: 550, y: 150, inputs: [{ name: 'message', type: 'string', value: '' }], outputs: [{ name: 'done', type: 'flow' }], config: {} },
-                        { id: 'node_6', type: 'End', category: 'Control Flow', x: 1050, y: 100, inputs: [{ name: 'main', type: 'flow', value: '' }], outputs: [], config: {} }
-                    ];
-                    connections = [
-                        { id: 'connection_1', from: { nodeId: 'node_1', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
-                        { id: 'connection_2', from: { nodeId: 'node_2', portIndex: 0 }, to: { nodeId: 'node_3', portIndex: 0 } },
-                        { id: 'connection_3', from: { nodeId: 'node_3', portIndex: 0 }, to: { nodeId: 'node_4', portIndex: 0 } },
-                        { id: 'connection_4', from: { nodeId: 'node_3', portIndex: 1 }, to: { nodeId: 'node_5', portIndex: 0 } },
-                        { id: 'connection_5', from: { nodeId: 'node_4', portIndex: 0 }, to: { nodeId: 'node_2', portIndex: 0 } },
-                        { id: 'connection_6', from: { nodeId: 'node_5', portIndex: 0 }, to: { nodeId: 'node_6', portIndex: 0 } }
-                    ];
-                    nodeIdCounter = 7;
-                    connectionIdCounter = 7;
-                    break;
+                default:
+                    return;
             }
 
             renderWorkflow();
             updateStats();
-            showNotification('Template Loaded', `${templateName} template loaded`, 'success');
-
-            // Reset dropdown
-            event.target.value = '';
         }
 
         // Import Python file
