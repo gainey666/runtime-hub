@@ -26,10 +26,10 @@ const path = require('path');
  */
 
 class PluginLoader {
-    constructor() {
+    constructor(pluginsDir = null) {
         this.plugins = new Map();
         this.pluginNodes = new Map();
-        this.pluginsDir = path.join(__dirname, '..', '..', 'plugins');
+        this.pluginsDir = pluginsDir || path.join(__dirname, '..', '..', 'plugins');
     }
 
     /**
@@ -98,11 +98,34 @@ class PluginLoader {
                 ...(pluginModule.nodes || [])
             ];
 
-            // Create combined plugin object
+            // Convert manifest nodes to expected structure and add executors
+            const processedNodes = allNodes.map(node => {
+                // Convert manifest structure to expected structure
+                const processedNode = { ...node };
+                
+                // Convert inputs/outputs arrays to ports object
+                if (node.inputs && node.outputs) {
+                    processedNode.ports = {
+                        inputs: node.inputs.map(input => input.name),
+                        outputs: node.outputs.map(output => output.name)
+                    };
+                }
+                
+                // Add executor from plugin module if available
+                if (node.type === 'Data Transform' && pluginModule.executeDataTransform) {
+                    processedNode.executor = pluginModule.executeDataTransform;
+                } else if (node.type === 'Logger' && pluginModule.executeLogger) {
+                    processedNode.executor = pluginModule.executeLogger;
+                }
+                
+                return processedNode;
+            });
+
+            // Create combined plugin object - manifest takes precedence for structure
             const combinedPlugin = {
-                ...pluginModule,
                 ...manifest,
-                nodes: allNodes
+                ...pluginModule,
+                nodes: processedNodes
             };
 
             // Validate plugin structure

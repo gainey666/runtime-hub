@@ -491,13 +491,25 @@ app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
   console.log(`🚀 Starting workflow execution: ${workflowId}`);
   
   // Execute workflow in background with timeout
-  workflowEngine.executeWorkflow(workflowId, nodes, connections)
-    .then(result => {
-      console.log(`✅ Workflow completed: ${workflowId}`);
-    })
-    .catch(error => {
-      console.error(`❌ Workflow failed: ${workflowId} - ${error.message}`);
-    });
+  try {
+    const executePromise = workflowEngine.executeWorkflow(workflowId, nodes, connections);
+    
+    // Handle case where executeWorkflow doesn't return a promise
+    if (executePromise && typeof executePromise.then === 'function') {
+      executePromise
+        .then(result => {
+          console.log(`✅ Workflow completed: ${workflowId}`);
+        })
+        .catch(error => {
+          console.error(`❌ Workflow failed: ${workflowId} - ${error.message}`);
+        });
+    } else {
+      console.log(`🚀 Workflow execution started: ${workflowId}`);
+    }
+  } catch (error) {
+    console.error('Execute error:', error);
+    throw error;
+  }
   
   res.json({ 
     success: true, 

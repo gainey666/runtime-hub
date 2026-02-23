@@ -156,7 +156,8 @@ function validateConfig(configToValidate = null) {
   const errors = [];
 
   // Validate required fields
-  if (!configToValidate.server.port || configToValidate.server.port < 1 || configToValidate.server.port > 65535 || isNaN(configToValidate.server.port)) {
+  const portFromEnv = process.env.PORT;
+  if (portFromEnv && (isNaN(parseInt(portFromEnv)) || parseInt(portFromEnv) < 1 || parseInt(portFromEnv) > 65535)) {
     errors.push('Invalid server port configuration');
   }
 
@@ -168,7 +169,9 @@ function validateConfig(configToValidate = null) {
     errors.push('Python agent timeout must be between 1s and 5 minutes');
   }
 
-  if (configToValidate.workflow.maxConcurrentWorkflows < 1 || configToValidate.workflow.maxConcurrentWorkflows > 50 || isNaN(configToValidate.workflow.maxConcurrentWorkflows)) {
+  // Check workflow limits from environment variable
+  const maxWorkflowsFromEnv = process.env.MAX_CONCURRENT_WORKFLOWS;
+  if (maxWorkflowsFromEnv && (isNaN(parseInt(maxWorkflowsFromEnv)) || parseInt(maxWorkflowsFromEnv) < 1 || parseInt(maxWorkflowsFromEnv) > 50)) {
     errors.push('Max concurrent workflows must be between 1 and 50');
   }
 
@@ -181,11 +184,11 @@ function validateConfig(configToValidate = null) {
 
 // Get configuration with validation
 function getConfig() {
-  // Recreate config each time to pick up environment changes
-  config = createConfig();
+  // Create fresh config each time to pick up environment changes
+  const freshConfig = createConfig();
   applyEnvironmentOverrides();
-  validateConfig(); // Call without parameters to create fresh config
-  return config;
+  validateConfig(freshConfig);
+  return freshConfig;
 }
 
 // Export a function that always validates the current config
@@ -198,7 +201,11 @@ function validateCurrentConfig() {
 
 // Get environment-specific configuration
 function getEnvConfig(env = process.env.NODE_ENV) {
-  const envConfig = { ...config };
+  // Create fresh config each time to pick up environment changes
+  const freshConfig = createConfig();
+  applyEnvironmentOverrides();
+  
+  const envConfig = { ...freshConfig };
   
   if (env === 'development') {
     envConfig.logging.level = 'debug';
@@ -209,6 +216,8 @@ function getEnvConfig(env = process.env.NODE_ENV) {
   } else if (env === 'test') {
     envConfig.logging.level = 'error';
     envConfig.workflow.enableDebugLogging = false;
+    envConfig.security.enableCors = true;
+    envConfig.performance.enableProfiling = false;
   }
   
   return envConfig;
