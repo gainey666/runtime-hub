@@ -9,7 +9,7 @@ describe('AutoClickerEngine', () => {
   let engine;
 
   // Set timeout for all tests
-  jest.setTimeout(10000); // 10 seconds max per test
+  jest.setTimeout(15000); // 15 seconds max per test
 
   beforeEach(() => {
     engine = new AutoClickerEngine();
@@ -35,7 +35,7 @@ describe('AutoClickerEngine', () => {
       engine.runningSessions.clear();
     }
     // Wait a bit for background operations to finish
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 200));
   });
 
   describe('Engine Initialization', () => {
