@@ -36,9 +36,11 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '../public/node-editor.html'));
 
   // Capture console logs from main window
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[NODE EDITOR] ${message}`);
-  });
+  if (mainWindow.webContents && typeof mainWindow.webContents.on === 'function') {
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      console.log(`[NODE EDITOR] ${message}`);
+    });
+  }
 
   // Dev tools in development
   if (process.argv.includes('--dev')) {

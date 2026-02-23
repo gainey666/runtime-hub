@@ -146,11 +146,17 @@ function applyEnvironmentOverrides() {
 applyEnvironmentOverrides();
 
 // Validation helpers
-function validateConfig(configToValidate = config) {
+function validateConfig(configToValidate = null) {
+  // If no config provided, create a fresh one to pick up environment changes
+  if (configToValidate === null) {
+    configToValidate = createConfig();
+    applyEnvironmentOverrides();
+  }
+  
   const errors = [];
 
   // Validate required fields
-  if (!configToValidate.server.port || configToValidate.server.port < 1 || configToValidate.server.port > 65535) {
+  if (!configToValidate.server.port || configToValidate.server.port < 1 || configToValidate.server.port > 65535 || isNaN(configToValidate.server.port)) {
     errors.push('Invalid server port configuration');
   }
 
@@ -158,11 +164,11 @@ function validateConfig(configToValidate = config) {
     errors.push('Invalid database type. Must be sqlite, postgres, or mysql');
   }
 
-  if (configToValidate.pythonAgent.timeout < 1000 || configToValidate.pythonAgent.timeout > 300000) {
+  if (configToValidate.pythonAgent.timeout < 1000 || configToValidate.pythonAgent.timeout > 300000 || isNaN(configToValidate.pythonAgent.timeout)) {
     errors.push('Python agent timeout must be between 1s and 5 minutes');
   }
 
-  if (configToValidate.workflow.maxConcurrentWorkflows < 1 || configToValidate.workflow.maxConcurrentWorkflows > 50) {
+  if (configToValidate.workflow.maxConcurrentWorkflows < 1 || configToValidate.workflow.maxConcurrentWorkflows > 50 || isNaN(configToValidate.workflow.maxConcurrentWorkflows)) {
     errors.push('Max concurrent workflows must be between 1 and 50');
   }
 
@@ -178,7 +184,7 @@ function getConfig() {
   // Recreate config each time to pick up environment changes
   config = createConfig();
   applyEnvironmentOverrides();
-  validateConfig(config);
+  validateConfig(); // Call without parameters to create fresh config
   return config;
 }
 

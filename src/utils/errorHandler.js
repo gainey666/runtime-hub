@@ -86,8 +86,10 @@ function formatErrorResponse(error, requestId = null) {
   }
 
   // Include details in development mode
-  if (config.isDevelopment && error.details) {
-    response.error.details = error.details;
+  if (process.env.NODE_ENV === 'development') {
+    if (error.details) {
+      response.error.details = error.details;
+    }
     response.error.stack = error.stack;
   }
 
@@ -339,6 +341,16 @@ function withResilience(fn, options = {}) {
   
   const circuitBreakerFn = withCircuitBreaker(fn, maxFailures, resetTimeout);
   
+  // If called with no arguments, execute immediately
+  if (arguments.length <= 2) {
+    return withTimeout(
+      withRetry(() => circuitBreakerFn(), maxRetries, retryDelay, retryBackoff),
+      timeout,
+      fn.name || 'operation'
+    );
+  }
+  
+  // Otherwise return a function that can be called with arguments
   return async (...args) => {
     return withTimeout(
       withRetry(() => circuitBreakerFn(...args), maxRetries, retryDelay, retryBackoff),

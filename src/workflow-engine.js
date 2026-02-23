@@ -206,8 +206,8 @@ class WorkflowEngine extends EventEmitter {
                 this.addToHistory(workflow);
             }
             
-            // Reject the promise for failed workflows
-            throw error;
+            // Return the workflow object for error cases
+            return workflow;
         }
 
         this.updateMetrics(workflow);
