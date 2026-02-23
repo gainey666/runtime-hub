@@ -117,14 +117,15 @@ class WorkflowEngine extends EventEmitter {
             }
 
             // Initialize workflow and reserve slot BEFORE any awaits
-            workflow = {
+            const workflow = {
                 id: workflowId,
                 nodes,
                 connections,
                 executionState: new Map(),
                 startTime: Date.now(),
                 status: 'running',
-                cancelled: false
+                cancelled: false,
+                completedNodes: 0
             };
             this.runningWorkflows.set(workflowId, workflow);
 
@@ -161,6 +162,9 @@ class WorkflowEngine extends EventEmitter {
                 console.log(`✅ Workflow completed: ${workflowId} (${workflow.duration}ms)`);
             }
             this.broadcastWorkflowUpdate(workflowId, 'completed', workflow);
+            
+            // Add to history for completed workflows
+            this.addToHistory(workflow);
 
         } catch (error) {
             if (workflow) {
@@ -170,6 +174,9 @@ class WorkflowEngine extends EventEmitter {
                 workflow.duration = workflow.endTime - (workflow.startTime || Date.now());
                 this.runningWorkflows.delete(workflowId);
                 this.broadcastWorkflowUpdate(workflowId, 'error', { error: error.message });
+                
+                // Add to history for failed workflows
+                this.addToHistory(workflow);
             } else {
                 // Error before workflow initialised (limit reached, no Start node)
                 workflow = {
@@ -182,11 +189,13 @@ class WorkflowEngine extends EventEmitter {
                     nodes,
                     connections
                 };
+                
+                // Add to history for failed workflows
+                this.addToHistory(workflow);
             }
         }
 
         this.updateMetrics(workflow);
-        this.addToHistory(workflow);
         return workflow;
     }
 
@@ -197,6 +206,7 @@ class WorkflowEngine extends EventEmitter {
 
         const nodeId = node.id;
         const nodeType = node.type;
+        const inputs = this.resolveInputs(node, workflow, connections);
 
         console.log(`⚡ Executing node: ${nodeType} (${nodeId})`);
         console.log(`🔍 Debug: node object:`, node);
@@ -222,25 +232,17 @@ class WorkflowEngine extends EventEmitter {
             const executor = this.nodeExecutors.get(nodeType);
             if (!executor) throw new Error(`No executor found for node type: ${nodeType}`);
 
-            const inputs = this.resolveInputs(node, workflow, connections);
-            const result = await executor(node, workflow, connections, inputs);
-
-            if (workflow.context) {
-                workflow.context.values[nodeId] = result;
-            }
-
+            const result = await executor.call(this, node, workflow, connections, inputs);
+            
+            // Mark node completed
             nodeState.status = 'completed';
             nodeState.endTime = Date.now();
             nodeState.result = result;
             nodeState.duration = nodeState.endTime - nodeState.startTime;
             workflow.executionState.set(nodeId, nodeState);
-
-            this.io.emit('log_entry', {
-                source: 'WorkflowEngine',
-                level: 'success',
-                message: `Node completed: ${nodeType} (${nodeState.duration}ms)`,
-                data: { nodeId, result, duration: nodeState.duration }
-            });
+            
+            // Increment completed nodes counter
+            workflow.completedNodes = (workflow.completedNodes || 0) + 1;
 
             this.broadcastNodeUpdate(workflow.id, nodeId, 'completed', result);
 
@@ -444,7 +446,8 @@ class WorkflowEngine extends EventEmitter {
             duration: workflow.duration,
             startTime: workflow.startTime,
             endTime: workflow.endTime,
-            nodeCount: workflow.nodes ? workflow.nodes.length : 0
+            nodeCount: workflow.nodes ? workflow.nodes.length : 0,
+            completedNodes: workflow.completedNodes || 0
         });
 
         if (this.workflowHistory.length > this.maxHistorySize) {

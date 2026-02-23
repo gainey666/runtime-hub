@@ -151,8 +151,7 @@ describe('E2E Workflow Tests', () => {
           startTime: workflow.startTime,
           duration: workflow.duration,
           nodeCount: workflow.nodes ? workflow.nodes.length : (workflow.nodeCount || 0),
-          completedNodes: workflow.completedNodes || 
-            (workflow.status === 'completed' ? workflow.nodeCount || 0 : 0)
+          completedNodes: workflow.completedNodes || 0
         }
       });
     });
