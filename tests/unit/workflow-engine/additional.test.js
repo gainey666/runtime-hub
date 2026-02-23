@@ -12,26 +12,50 @@ describe('WorkflowEngine - Additional Coverage', () => {
 
   beforeEach(() => {
     mockIo = new EventEmitter();
-    engine = new WorkflowEngine(mockIo);
+    engine = new WorkflowEngine(mockIo, {
+      workflow: {
+        maxConcurrentWorkflows: 5,
+        defaultTimeout: 60000,
+        maxNodeExecutionTime: 5000,
+        enableDebugLogging: false
+      }
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clear any running workflows
+    const runningWorkflows = Array.from(engine.runningWorkflows.keys());
+    for (const workflowId of runningWorkflows) {
+      try {
+        await engine.stop(workflowId);
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
+    }
     engine.runningWorkflows.clear();
     engine.workflowHistory = [];
+    
+    // Wait a bit for async operations to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   describe('Constructor Edge Cases', () => {
     test('should initialize with custom config', () => {
       const customConfig = {
-        server: { port: 4000 },
-        workflow: { maxConcurrentWorkflows: 10 }
+        workflow: {
+          maxConcurrentWorkflows: 10,
+          defaultTimeout: 30000,
+          maxNodeExecutionTime: 3000,
+          enableDebugLogging: true
+        }
       };
       
       const customEngine = new WorkflowEngine(mockIo, customConfig);
       
-      expect(customEngine.config.server.port).toBe(4000);
       expect(customEngine.config.workflow.maxConcurrentWorkflows).toBe(10);
+      expect(customEngine.config.workflow.defaultTimeout).toBe(30000);
+      expect(customEngine.config.workflow.maxNodeExecutionTime).toBe(3000);
+      expect(customEngine.config.workflow.enableDebugLogging).toBe(true);
     });
 
     test('should initialize node executors', () => {

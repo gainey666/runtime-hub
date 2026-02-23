@@ -27,10 +27,21 @@ describe('WorkflowEngine', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Clear any running workflows
+    const runningWorkflows = Array.from(engine.runningWorkflows.keys());
+    for (const workflowId of runningWorkflows) {
+      try {
+        await engine.stop(workflowId);
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
+    }
     engine.runningWorkflows.clear();
     engine.workflowHistory = [];
+    
+    // Wait a bit for async operations to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   describe('Constructor', () => {
