@@ -20,5 +20,5 @@ module.exports = {
         }
     },
     verbose: true,
-    detectOpenHandles: true
+    detectOpenHandles: process.env.CI !== 'true'
 };
