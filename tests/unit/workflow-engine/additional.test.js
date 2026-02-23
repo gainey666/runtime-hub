@@ -141,6 +141,14 @@ describe('WorkflowEngine - Additional Coverage', () => {
   });
 
   describe('Node Executors - Additional Coverage', () => {
+    test('should have node executor for Condition node', () => {
+      const executor = engine.nodeExecutors.get('Condition');
+      expect(executor).toBeDefined();
+      expect(typeof executor).toBe('function');
+    });
+
+    const adapters = require('../../../src/engine/node-adapters');
+
     test('should execute Condition node - true path', async () => {
       const node = {
         id: 'condition',
@@ -151,11 +159,25 @@ describe('WorkflowEngine - Additional Coverage', () => {
           value: 'test'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeCondition(node, workflow, connections);
-      
+      const result = await adapters.executeCondition(node, workflow, connections);
+
       expect(result.result).toBe(true);
       expect(result.branch).toBe('true');
     });
@@ -170,10 +192,24 @@ describe('WorkflowEngine - Additional Coverage', () => {
           value: 'different'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeCondition(node, workflow, connections);
+      const result = await adapters.executeCondition(node, workflow, connections);
 
       expect(result.result).toBe(false);
       expect(result.branch).toBe('false');
@@ -189,13 +225,29 @@ describe('WorkflowEngine - Additional Coverage', () => {
           headers: { 'Content-Type': 'application/json' }
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeHTTPRequest(node, workflow, connections);
+      const result = await adapters.executeHTTPRequest(node, workflow, connections);
       
       expect(result.status).toBe(200);
       expect(result.data).toBeDefined();
+      expect(result.url).toBe('https://httpbin.org/get');
+      expect(result.method).toBe('GET');
     });
 
     test('should execute SQL Query node', async () => {
@@ -207,14 +259,29 @@ describe('WorkflowEngine - Additional Coverage', () => {
           database: 'test.db'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeSQLQuery(node, workflow, connections);
+      const result = await adapters.executeSQLQuery(node, workflow, connections);
       
-      expect(result.rows).toBeDefined();
-      expect(Array.isArray(result.rows)).toBe(true);
-      expect(result.rows.length).toBeGreaterThan(0);
+      expect(result.success).toBe(true);
+      expect(result.results).toBeDefined();
+      expect(Array.isArray(result.results)).toBe(true);
+      expect(result.results.length).toBeGreaterThan(0);
     });
 
     test('should execute Show Message node', async () => {
@@ -226,13 +293,27 @@ describe('WorkflowEngine - Additional Coverage', () => {
           type: 'info'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeShowMessage(node, workflow, connections);
+      const result = await adapters.executeShowMessage(node, workflow, connections);
       
-      expect(result.message).toBe('Test message');
       expect(result.shown).toBe(true);
+      expect(result.message).toBe('Test message');
     });
 
     test('should execute Write Log node', async () => {
@@ -245,11 +326,26 @@ describe('WorkflowEngine - Additional Coverage', () => {
           logFile: 'test.log'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeWriteLog(node, workflow, connections);
+      const result = await adapters.executeWriteLog(node, workflow, connections);
       
+      expect(result.success).toBe(true);
       expect(result.level).toBe('info');
       expect(result.message).toBe('Test log message');
       expect(result.logFile).toBe('test.log');
@@ -265,11 +361,25 @@ describe('WorkflowEngine - Additional Coverage', () => {
           unit: 'ms'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
       const startTime = Date.now();
-      const result = await engine.executeDelay(node, workflow, connections);
+      const result = await adapters.executeDelay(node, workflow, connections);
       const endTime = Date.now();
 
       expect(result.duration).toBe(50);
@@ -287,13 +397,27 @@ describe('WorkflowEngine - Additional Coverage', () => {
           action: 'copy'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeKeyboardInput(node, workflow, connections);
+      const result = await adapters.executeKeyboardInput(node, workflow, connections);
       
-      expect(result.keys).toBe('simulated keys');
       expect(result.sent).toBe(true);
+      expect(result.keys).toBe('ctrl+c');
     });
 
     test('should execute Encrypt Data node', async () => {
@@ -305,12 +429,26 @@ describe('WorkflowEngine - Additional Coverage', () => {
           algorithm: 'AES-256'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeEncryptData(node, workflow, connections);
+      const result = await adapters.executeEncryptData(node, workflow, connections);
       
-      expect(result.encrypted).toBe('simulated encrypted data');
+      expect(result.encrypted).toMatch(/^[a-f0-9]+$/); // Should be a hex string
     });
 
     test('should execute Loop node', async () => {
@@ -321,12 +459,28 @@ describe('WorkflowEngine - Additional Coverage', () => {
           iterations: 3
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeLoop(node, workflow, connections);
+      const result = await adapters.executeLoop(node, workflow, connections);
       
-      expect(result.message).toBe('Loop execution simulated');
+      expect(result.success).toBe(true);
+      expect(result.iterations).toBe(3);
+      expect(result.completed).toBe(0); // No connected nodes to execute
     });
 
     test('should execute Monitor Function node', async () => {
@@ -338,12 +492,29 @@ describe('WorkflowEngine - Additional Coverage', () => {
           interval: 1000
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeMonitorFunction(node, workflow, connections);
+      const result = await adapters.executeMonitorFunction(node, workflow, connections);
       
-      expect(result.message).toBe('Function monitoring simulated');
+      expect(result.success).toBe(true);
+      expect(result.target).toBe('');
+      expect(result.checks).toBeDefined();
+      expect(Array.isArray(result.checks)).toBe(true);
     });
 
     test('should execute Import Module node', async () => {
@@ -355,15 +526,28 @@ describe('WorkflowEngine - Additional Coverage', () => {
           path: './test.js'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeImportModule(node, workflow, connections);
+      const result = await adapters.executeImportModule(node, workflow, connections);
       
-      expect(result.module).toBe('test-module');
-      expect(result.path).toBe('./test.js');
-      expect(result.loaded).toBe(true);
-      expect(result.exports).toContain('default');
+      expect(result.success).toBe(false); // Module doesn't exist
+      expect(result.module).toMatch(/test\.js$/); // Should resolve to absolute path
+      expect(result.error).toBeDefined();
     });
 
     test('should execute List Directory node', async () => {
@@ -374,13 +558,29 @@ describe('WorkflowEngine - Additional Coverage', () => {
           path: './test'
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeListDirectory(node, workflow, connections);
+      const result = await adapters.executeListDirectory(node, workflow, connections);
       
-      expect(result.files).toEqual(['file1.txt', 'file2.txt']);
-      expect(result.directories).toEqual(['dir1', 'dir2']);
+      expect(result.path).toBe('./test');
+      expect(result.files).toBeDefined();
+      expect(result.directories).toBeDefined();
+      expect(result.total).toBeGreaterThanOrEqual(0);
     });
 
     test('should execute Start Process node', async () => {
@@ -392,13 +592,29 @@ describe('WorkflowEngine - Additional Coverage', () => {
           args: ['--version']
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeStartProcess(node, workflow, connections);
+      const result = await adapters.executeStartProcess(node, workflow, connections);
       
-      expect(result.processId).toBe(1234);
-      expect(result.status).toBe('started');
+      expect(result.processId).toBeDefined();
+      expect(result.command).toBe('node');
+      expect(result.args).toEqual(['--version']);
+      expect(result.status).toBeDefined();
     });
 
     test('should execute Kill Process node', async () => {
@@ -409,13 +625,27 @@ describe('WorkflowEngine - Additional Coverage', () => {
           processId: 1234
         }
       };
-      const workflow = { id: 'test', cancelled: false };
       const connections = [];
+      const workflow = { 
+        id: 'test', 
+        cancelled: false,
+        nodes: [node],
+        connections: connections,
+        io: mockIo,
+        emitFn: (event, data) => {},
+        context: {
+            runId: 'test',
+            variables: {},
+            values: {},
+            assetsDir: './test'
+        },
+        executionState: new Map()
+      };
 
-      const result = await engine.executeKillProcess(node, workflow, connections);
+      const result = await adapters.executeKillProcess(node, workflow, connections);
       
       expect(result.processId).toBe(1234);
-      expect(result.status).toBe('killed');
+      expect(result.status).toMatch(/killed|failed/); // Should be killed or failed
     });
   });
 
