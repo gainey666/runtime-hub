@@ -117,7 +117,7 @@ class WorkflowEngine extends EventEmitter {
             }
 
             // Initialize workflow and reserve slot BEFORE any awaits
-            const workflow = {
+            workflow = {
                 id: workflowId,
                 nodes,
                 connections,
@@ -248,6 +248,9 @@ class WorkflowEngine extends EventEmitter {
             nodeState.result = result;
             nodeState.duration = nodeState.endTime - nodeState.startTime;
             workflow.executionState.set(nodeId, nodeState);
+            
+            // Store result in context.values for downstream nodes
+            workflow.context.values[nodeId] = result;
             
             // Increment completed nodes counter
             workflow.completedNodes = (workflow.completedNodes || 0) + 1;

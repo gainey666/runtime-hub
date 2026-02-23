@@ -146,23 +146,23 @@ function applyEnvironmentOverrides() {
 applyEnvironmentOverrides();
 
 // Validation helpers
-function validateConfig() {
+function validateConfig(configToValidate = config) {
   const errors = [];
 
   // Validate required fields
-  if (!config.server.port || config.server.port < 1 || config.server.port > 65535) {
+  if (!configToValidate.server.port || configToValidate.server.port < 1 || configToValidate.server.port > 65535) {
     errors.push('Invalid server port configuration');
   }
 
-  if (config.database.type && !['sqlite', 'postgres', 'mysql'].includes(config.database.type)) {
+  if (configToValidate.database.type && !['sqlite', 'postgres', 'mysql'].includes(configToValidate.database.type)) {
     errors.push('Invalid database type. Must be sqlite, postgres, or mysql');
   }
 
-  if (config.pythonAgent.timeout < 1000 || config.pythonAgent.timeout > 300000) {
+  if (configToValidate.pythonAgent.timeout < 1000 || configToValidate.pythonAgent.timeout > 300000) {
     errors.push('Python agent timeout must be between 1s and 5 minutes');
   }
 
-  if (config.workflow.maxConcurrentWorkflows < 1 || config.workflow.maxConcurrentWorkflows > 50) {
+  if (configToValidate.workflow.maxConcurrentWorkflows < 1 || configToValidate.workflow.maxConcurrentWorkflows > 50) {
     errors.push('Max concurrent workflows must be between 1 and 50');
   }
 
@@ -178,8 +178,16 @@ function getConfig() {
   // Recreate config each time to pick up environment changes
   config = createConfig();
   applyEnvironmentOverrides();
-  validateConfig();
+  validateConfig(config);
   return config;
+}
+
+// Export a function that always validates the current config
+function validateCurrentConfig() {
+  // Update global config before validation
+  config = createConfig();
+  applyEnvironmentOverrides();
+  return validateConfig(config);
 }
 
 // Get environment-specific configuration
@@ -206,6 +214,7 @@ module.exports = {
   getConfig,
   getEnvConfig,
   validateConfig,
+  validateCurrentConfig,
   isDevelopment,
   isProduction,
   isTest

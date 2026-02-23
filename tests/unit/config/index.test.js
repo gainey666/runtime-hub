@@ -75,9 +75,9 @@ describe('Configuration System', () => {
       process.env.PYTHON_TIMEOUT = '30000';
       process.env.MAX_CONCURRENT_WORKFLOWS = '5';
       
-      const { validateConfig } = require('../../../src/config');
+      const { validateCurrentConfig } = require('../../../src/config');
       
-      expect(() => validateConfig()).not.toThrow();
+      expect(() => validateCurrentConfig()).not.toThrow();
     });
 
     test('should detect invalid timeout values', () => {
@@ -86,9 +86,9 @@ describe('Configuration System', () => {
       process.env.DB_TYPE = 'sqlite'; // Set valid DB type
       process.env.MAX_CONCURRENT_WORKFLOWS = '5'; // Set valid workflow limit
       
-      const { validateConfig } = require('../../../src/config');
+      const { validateCurrentConfig } = require('../../../src/config');
       
-      expect(() => validateConfig()).toThrow('Python agent timeout must be between 1s and 5 minutes');
+      expect(() => validateCurrentConfig()).toThrow('Python agent timeout must be between 1s and 5 minutes');
     });
 
     test('should detect invalid workflow limits', () => {
@@ -97,9 +97,9 @@ describe('Configuration System', () => {
       process.env.DB_TYPE = 'sqlite'; // Set valid DB type
       process.env.PYTHON_TIMEOUT = '30000'; // Set valid timeout
       
-      const { validateConfig } = require('../../../src/config');
+      const { validateCurrentConfig } = require('../../../src/config');
       
-      expect(() => validateConfig()).toThrow('Max concurrent workflows must be between 1 and 50');
+      expect(() => validateCurrentConfig()).toThrow('Max concurrent workflows must be between 1 and 50');
     });
   });
 
