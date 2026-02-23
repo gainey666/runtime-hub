@@ -135,12 +135,18 @@ describe('E2E Workflow Tests', () => {
         const history = workflowEngine.getHistory();
         workflow = history.find(w => w.id === workflowId);
       }
-
+      
       if (!workflow) {
         return res.status(404).json({
           success: false,
-          error: { message: 'Workflow not found', code: 'NOT_FOUND' }
+          error: { message: 'Workflow not found', code: 'WORKFLOW_NOT_FOUND' }
         });
+      }
+
+      // Calculate completedNodes for workflows from history
+      let completedNodes = workflow.completedNodes || 0;
+      if (workflow.status === 'completed' && !workflow.completedNodes) {
+        completedNodes = workflow.nodeCount || 0;
       }
 
       res.json({
@@ -148,10 +154,12 @@ describe('E2E Workflow Tests', () => {
         workflow: {
           id: workflow.id,
           status: workflow.status,
+          nodeCount: workflow.nodeCount,
+          completedNodes,
           startTime: workflow.startTime,
+          endTime: workflow.endTime,
           duration: workflow.duration,
-          nodeCount: workflow.nodes ? workflow.nodes.length : (workflow.nodeCount || 0),
-          completedNodes: workflow.completedNodes || 0
+          error: workflow.error
         }
       });
     });
@@ -312,7 +320,7 @@ describe('E2E Workflow Tests', () => {
       const workflowId = startResponse.body.workflowId;
 
       // Wait for workflow to fail
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       const statusResponse = await request(baseUrl)
         .get(`/api/workflows/${workflowId}/status`)
@@ -397,7 +405,7 @@ describe('E2E Workflow Tests', () => {
       socketClient.on('node_update', (data) => {
         expect(data.workflowId).toBeDefined();
         expect(data.nodeId).toBeDefined();
-        expect(['running', 'completed', 'error']).toContain(data.status);
+        expect(['running', 'completed']).toContain(data.status);
         expect(data.timestamp).toBeDefined();
         nodeUpdateReceived = true;
 

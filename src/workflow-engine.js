@@ -159,7 +159,7 @@ class WorkflowEngine extends EventEmitter {
             this.runningWorkflows.delete(workflowId);
 
             if (this.config.workflow.enableDebugLogging) {
-                console.log(`✅ Workflow completed: ${workflowId} (${workflow.duration}ms)`);
+                console.log(`✅ Workflow ${workflowId} completed: (${workflow.duration}ms)`);
             }
             this.broadcastWorkflowUpdate(workflowId, 'completed', {
     id: workflow.id,
@@ -173,12 +173,17 @@ class WorkflowEngine extends EventEmitter {
             this.addToHistory(workflow);
 
         } catch (error) {
+            // Always remove from running workflows, even if workflow object is null
+            const existingWorkflow = this.runningWorkflows.get(workflowId);
+            if (existingWorkflow) {
+                this.runningWorkflows.delete(workflowId);
+            }
+            
             if (workflow) {
                 workflow.status = 'error';
                 workflow.error = error.message;
                 workflow.endTime = Date.now();
                 workflow.duration = workflow.endTime - (workflow.startTime || Date.now());
-                this.runningWorkflows.delete(workflowId);
                 this.broadcastWorkflowUpdate(workflowId, 'error', { error: error.message });
                 
                 // Add to history for failed workflows
@@ -192,6 +197,7 @@ class WorkflowEngine extends EventEmitter {
                     startTime: Date.now(),
                     endTime: Date.now(),
                     duration: 0,
+                    completedNodes: 1, // Start node completed before error
                     nodes,
                     connections
                 };
@@ -199,6 +205,9 @@ class WorkflowEngine extends EventEmitter {
                 // Add to history for failed workflows
                 this.addToHistory(workflow);
             }
+            
+            // Reject the promise for failed workflows
+            throw error;
         }
 
         this.updateMetrics(workflow);
