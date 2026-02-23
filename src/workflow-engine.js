@@ -9,6 +9,7 @@
 const { EventEmitter } = require('events');
 const { NODE_PORT_MAP, CONTROL_FLOW_OUTPUT_PORTS } = require('./engine/ports');
 const adapters = require('./engine/node-adapters');
+const PluginLoader = require('./engine/plugin-loader');
 
 class WorkflowEngine extends EventEmitter {
     constructor(io, config = {}) {
@@ -44,6 +45,7 @@ class WorkflowEngine extends EventEmitter {
             errorsByType: new Map()
         };
 
+        this.pluginLoader = new PluginLoader();
         this.initializeNodeExecutors();
     }
 
@@ -78,7 +80,28 @@ class WorkflowEngine extends EventEmitter {
         ]);
     }
 
-    // ─── WORKFLOW LIFECYCLE ───────────────────────────────────────────────────
+    async loadPlugins() {
+        try {
+            await this.pluginLoader.loadPlugins();
+            
+            // Register plugin nodes with the engine
+            const pluginNodes = this.pluginLoader.getRegisteredNodes();
+            
+            for (const [nodeType, nodeDef] of pluginNodes) {
+                if (!this.nodeExecutors.has(nodeType)) {
+                    this.nodeExecutors.set(nodeType, nodeDef.executor);
+                    console.log(`🔌 Registered plugin node type: ${nodeType}`);
+                }
+            }
+            
+            console.log(`✅ Loaded ${pluginNodes.size} plugin node types`);
+            
+        } catch (error) {
+            console.error('❌ Failed to load plugins:', error);
+        }
+    }
+
+    // ── WORKFLOW LIFECYCLE ───────────────────────────────────────────────────
 
     async executeWorkflow(workflowId, nodes, connections) {
         let workflow = null;

@@ -60,6 +60,11 @@ io.emit = function(event, data) {
 // Initialize workflow engine with config
 const workflowEngine = new WorkflowEngine(io, config);
 
+// Load plugins on startup
+workflowEngine.loadPlugins().catch(error => {
+    console.error('Failed to load plugins during startup:', error);
+});
+
 // Middleware
 app.use(cors({
   origin: '*',
