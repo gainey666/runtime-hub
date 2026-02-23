@@ -143,26 +143,66 @@
             margin: 0 -8px;
         }
         
+        :root {
+            --toolbar-height: clamp(50px, 6vh, 70px);
+            --status-bar-height: clamp(32px, 4vh, 48px);
+            --palette-width: clamp(250px, 20vw, 320px);
+            --base-font-size: clamp(12px, 0.9vw, 16px);
+            --button-padding-x: clamp(8px, 1vw, 16px);
+            --button-padding-y: clamp(4px, 0.5vh, 8px);
+        }
+        
         .minimap {
-            position: absolute;
-            bottom: 20px;
+            position: fixed;
+            bottom: calc(var(--status-bar-height) + 20px);
             right: 20px;
-            width: 200px;
-            height: 150px;
-            background: rgba(0,0,0,0.8);
-            border: 2px solid #10b981;
+            width: clamp(200px, 25vw, 400px);
+            height: clamp(120px, 15vh, 200px);
+            background: #1a1a2e;
+            border: 1px solid #10b981;
             border-radius: 8px;
-            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            font-family: monospace;
+            font-size: clamp(10px, 1.2vw, 12px);
         }
         
         .toolbar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-bottom: 1px solid rgba(255,255,255,0.1);
+            height: var(--toolbar-height);
+            min-height: var(--toolbar-height);
+            max-height: var(--toolbar-height);
         }
         
         .status-bar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-top: 1px solid rgba(255,255,255,0.1);
+            height: var(--status-bar-height);
+            min-height: var(--status-bar-height);
+            max-height: var(--status-bar-height);
+            font-size: var(--base-font-size);
+        }
+
+        /* Main layout container */
+        .main-content {
+            height: calc(100vh - var(--toolbar-height) - var(--status-bar-height));
+            min-height: 0;
+        }
+
+        /* Node palette responsive width */
+        .node-palette {
+            width: var(--palette-width);
+            min-width: var(--palette-width);
+            max-width: var(--palette-width);
+        }
+
+        /* Responsive button sizing */
+        .toolbar button {
+            padding: var(--button-padding-y) var(--button-padding-x);
+            font-size: var(--base-font-size);
         }
 
         /* Node execution highlighting */
@@ -263,17 +303,17 @@
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 flex">
+    <div class="main-content flex">
         <!-- Node Palette -->
-        <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-            <div class="p-4 border-b border-gray-700">
+        <div class="node-palette bg-gray-800 border-r border-gray-700 flex flex-col shrink-0">
+            <div class="p-4 border-b border-gray-700 shrink-0">
                 <h2 class="text-lg font-bold mb-4 text-green-400">
                     <i class="fas fa-shapes mr-2"></i>Node Palette
                 </h2>
                 <input type="text" id="searchNodes" placeholder="Search nodes..." 
                     class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400">
             </div>
-            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4" id="nodePalette" style="max-height: calc(100vh - 200px);">
+            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4 min-h-0" id="nodePalette">
                 <!-- Nodes will be rendered here -->
             </div>
         </div>
