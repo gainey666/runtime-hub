@@ -16,4 +16,4 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npx jest --config tests/unit/workflow-engine/jest.config.js tests/unit/workflow-engine --listTests
+      - run: npx jest tests/unit/workflow-engine/additional.test.js tests/unit/workflow-engine/index.test.js --forceExit
