@@ -471,8 +471,13 @@ class WorkflowEngine extends EventEmitter {
     // ─── BROADCASTING ─────────────────────────────────────────────────────────
 
     broadcastWorkflowUpdate(workflowId, status, data) {
-        if (this.io && this.io.emit) {
-            this.io.emit('workflow_update', { workflowId, status, data, timestamp: Date.now() });
+        try {
+            if (this.io && this.io.emit) {
+                this.io.emit('workflow_update', { workflowId, status, data, timestamp: Date.now() });
+            }
+        } catch (error) {
+            // Don't let broadcast errors fail the workflow
+            console.warn(`Failed to broadcast workflow update: ${error.message}`);
         }
     }
 

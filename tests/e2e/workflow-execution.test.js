@@ -128,7 +128,13 @@ describe('E2E Workflow Tests', () => {
 
     app.get('/api/workflows/:workflowId/status', (req, res) => {
       const { workflowId } = req.params;
-      const workflow = workflowEngine.runningWorkflows.get(workflowId);
+      let workflow = workflowEngine.runningWorkflows.get(workflowId);
+      
+      // If not in running workflows, check history
+      if (!workflow) {
+        const history = workflowEngine.getHistory();
+        workflow = history.find(w => w.id === workflowId);
+      }
 
       if (!workflow) {
         return res.status(404).json({
@@ -144,8 +150,9 @@ describe('E2E Workflow Tests', () => {
           status: workflow.status,
           startTime: workflow.startTime,
           duration: workflow.duration,
-          nodeCount: workflow.nodes.length,
-          completedNodes: Array.from(workflow.executionState.values()).filter(state => state.status === 'completed').length
+          nodeCount: workflow.nodes ? workflow.nodes.length : (workflow.nodeCount || 0),
+          completedNodes: workflow.completedNodes || 
+            (workflow.status === 'completed' ? workflow.nodeCount || 0 : 0)
         }
       });
     });
