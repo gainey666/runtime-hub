@@ -106,7 +106,7 @@
         }
         
         .connection.animated {
-            /* Removed animation for performance */
+            opacity: 0.8;
         }
         
         .palette-item {
@@ -1216,19 +1216,32 @@
 
             if (!fromElement || !toElement) return;
 
-            // Get node dimensions
+            // Get canvas element for coordinate calculations
+            const canvas = document.getElementById('canvas');
+            if (!canvas) return;
+
+            // Get node dimensions from rendered elements
             const fromRect = fromElement.getBoundingClientRect();
             const toRect = toElement.getBoundingClientRect();
-            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
 
             // Calculate connection points relative to canvas
+            // Output port (right side of from node)
             const fromX = fromNode.x + fromRect.width;
-            const fromY = fromNode.y + fromRect.height / 2 + (fromPortIndex * 30);
-            const toX = toNode.x;
-            const toY = toNode.y + toRect.height / 2 + (toPortIndex * 30);
+            const fromY = fromNode.y + (fromRect.height / 2) + (fromPortIndex * 30) + 15;
 
-            // Create curved path
-            const d = `M ${fromX} ${fromY} C ${fromX + 100} ${fromY}, ${toX - 100} ${toY}, ${toX} ${toY}`;
+            // Input port (left side of to node)
+            const toX = toNode.x;
+            const toY = toNode.y + (toRect.height / 2) + (toPortIndex * 30) + 15;
+
+            // Adjust for canvas scroll/pan offset
+            const canvasScrollLeft = canvas.scrollLeft || 0;
+            const canvasScrollTop = canvas.scrollTop || 0;
+
+            // Create curved path with proper coordinates
+            const curveOffset = Math.min(100, Math.abs(toX - fromX) / 2);
+            const d = `M ${fromX} ${fromY} C ${fromX + curveOffset} ${fromY}, ${toX - curveOffset} ${toY}, ${toX} ${toY}`;
+            
             path.setAttribute('d', d);
         }
 
@@ -2091,17 +2104,25 @@
             } else if (e.key === 'Delete' && selectedNode) {
                 // Delete selected node
                 nodes = nodes.filter(n => n.id !== selectedNode.id);
+                
+                // Remove connections associated with deleted node
+                const connectionsToRemove = connections.filter(c =>
+                    c.from.nodeId === selectedNode.id || c.to.nodeId === selectedNode.id
+                );
+                
+                // Remove connection SVG elements
+                connectionsToRemove.forEach(conn => {
+                    const path = document.getElementById(conn.id);
+                    if (path) path.remove();
+                });
+                
+                // Update connections array
                 connections = connections.filter(c =>
                     c.from.nodeId !== selectedNode.id && c.to.nodeId !== selectedNode.id
                 );
 
                 const nodeEl = document.getElementById(selectedNode.id);
                 if (nodeEl) nodeEl.remove();
-
-                connections.forEach(conn => {
-                    const path = document.getElementById(conn.id);
-                    if (path) path.remove();
-                });
 
                 deselectAllNodes();
                 updateStats();
