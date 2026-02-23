@@ -378,6 +378,9 @@ describe('E2E Workflow Tests', () => {
 
   describe('Real-time Updates', () => {
     test('should receive workflow status updates via Socket.IO', (done) => {
+      // Create fresh Socket.IO client for this test to avoid cross-test contamination
+      const testSocketClient = require('socket.io-client')(`http://localhost:${server.address().port}`);
+      
       const workflowData = {
         nodes: [
           { id: 'start', type: 'Start', x: 0, y: 0, inputs: [], outputs: ['main'], config: {} },
@@ -391,18 +394,19 @@ describe('E2E Workflow Tests', () => {
       let workflowUpdateReceived = false;
       let nodeUpdateReceived = false;
 
-      socketClient.on('workflow_update', (data) => {
+      testSocketClient.on('workflow_update', (data) => {
         expect(data.workflowId).toBeDefined();
         expect(data.status).toBe('completed');
         expect(data.timestamp).toBeDefined();
         workflowUpdateReceived = true;
 
         if (workflowUpdateReceived && nodeUpdateReceived) {
+          testSocketClient.disconnect();
           done();
         }
       });
 
-      socketClient.on('node_update', (data) => {
+      testSocketClient.on('node_update', (data) => {
         expect(data.workflowId).toBeDefined();
         expect(data.nodeId).toBeDefined();
         expect(['running', 'completed']).toContain(data.status);
@@ -410,12 +414,13 @@ describe('E2E Workflow Tests', () => {
         nodeUpdateReceived = true;
 
         if (workflowUpdateReceived && nodeUpdateReceived) {
+          testSocketClient.disconnect();
           done();
         }
       });
 
       // Wait for Socket.IO client to connect before starting workflow
-      socketClient.on('connect', () => {
+      testSocketClient.on('connect', () => {
         // Start workflow
         request(baseUrl)
           .post('/api/workflows/execute')
@@ -424,6 +429,7 @@ describe('E2E Workflow Tests', () => {
             // Wait for updates
             setTimeout(() => {
               if (!workflowUpdateReceived || !nodeUpdateReceived) {
+                testSocketClient.disconnect();
                 done(new Error('Socket.IO updates not received'));
               }
             }, 1000);
