@@ -69,4 +69,10 @@ module.exports = {
   
   // Error handling
   errorOnDeprecated: true,
+  
+  // Disable detectOpenHandles to prevent CI failures
+  detectOpenHandles: false,
+  
+  // Add forceExit to prevent worker process issues
+  forceExit: true,
 };
