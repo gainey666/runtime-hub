@@ -161,7 +161,13 @@ class WorkflowEngine extends EventEmitter {
             if (this.config.workflow.enableDebugLogging) {
                 console.log(`✅ Workflow completed: ${workflowId} (${workflow.duration}ms)`);
             }
-            this.broadcastWorkflowUpdate(workflowId, 'completed', workflow);
+            this.broadcastWorkflowUpdate(workflowId, 'completed', {
+    id: workflow.id,
+    status: workflow.status,
+    duration: workflow.duration,
+    completedNodes: workflow.completedNodes,
+    nodeCount: workflow.nodes ? workflow.nodes.length : 0
+});
             
             // Add to history for completed workflows
             this.addToHistory(workflow);

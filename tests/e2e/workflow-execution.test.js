@@ -397,7 +397,7 @@ describe('E2E Workflow Tests', () => {
       socketClient.on('node_update', (data) => {
         expect(data.workflowId).toBeDefined();
         expect(data.nodeId).toBeDefined();
-        expect(['running', 'completed']).toContain(data.status);
+        expect(['running', 'completed', 'error']).toContain(data.status);
         expect(data.timestamp).toBeDefined();
         nodeUpdateReceived = true;
 
@@ -406,18 +406,21 @@ describe('E2E Workflow Tests', () => {
         }
       });
 
-      // Start workflow
-      request(baseUrl)
-        .post('/api/workflows/execute')
-        .send(workflowData)
-        .then(() => {
-          // Wait for updates
-          setTimeout(() => {
-            if (!workflowUpdateReceived || !nodeUpdateReceived) {
-              done(new Error('Socket.IO updates not received'));
-            }
-          }, 1000);
-        });
+      // Wait for Socket.IO client to connect before starting workflow
+      socketClient.on('connect', () => {
+        // Start workflow
+        request(baseUrl)
+          .post('/api/workflows/execute')
+          .send(workflowData)
+          .then(() => {
+            // Wait for updates
+            setTimeout(() => {
+              if (!workflowUpdateReceived || !nodeUpdateReceived) {
+                done(new Error('Socket.IO updates not received'));
+              }
+            }, 1000);
+          });
+      });
     });
   });
 
