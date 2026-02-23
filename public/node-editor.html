@@ -5,31 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Runtime Logger - Node Editor</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <link rel="stylesheet" href="./styles/tailwind.css">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
-        /* Reset and viewport handling for any monitor size */
-        * {
-            box-sizing: border-box;
-        }
-
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
             overflow: hidden;
-            position: fixed;
-        }
-
-        /* Responsive scaling based on viewport */
-        :root {
-            --toolbar-height: clamp(50px, 6vh, 70px);
-            --status-bar-height: clamp(32px, 4vh, 48px);
-            --palette-width: clamp(250px, 20vw, 320px);
-            --base-font-size: clamp(12px, 0.9vw, 16px);
-            --button-padding-x: clamp(8px, 1vw, 16px);
-            --button-padding-y: clamp(4px, 0.5vh, 8px);
         }
 
         .node {
@@ -173,52 +153,16 @@
             border: 2px solid #10b981;
             border-radius: 8px;
             overflow: hidden;
-            display: none; /* Hidden until implemented */
         }
         
         .toolbar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-bottom: 1px solid rgba(255,255,255,0.1);
-            height: var(--toolbar-height);
-            min-height: var(--toolbar-height);
-            max-height: var(--toolbar-height);
         }
-
+        
         .status-bar {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
             border-top: 1px solid rgba(255,255,255,0.1);
-            height: var(--status-bar-height);
-            min-height: var(--status-bar-height);
-            max-height: var(--status-bar-height);
-            font-size: var(--base-font-size);
-        }
-
-        /* Main layout container */
-        .main-content {
-            height: calc(100vh - var(--toolbar-height) - var(--status-bar-height));
-            min-height: 0;
-        }
-
-        /* Node palette responsive width */
-        .node-palette {
-            width: var(--palette-width);
-            min-width: var(--palette-width);
-            max-width: var(--palette-width);
-        }
-
-        /* Responsive button sizing */
-        button {
-            padding: var(--button-padding-y) var(--button-padding-x);
-            font-size: var(--base-font-size);
-        }
-
-        /* Responsive text */
-        .toolbar h1 {
-            font-size: clamp(16px, 1.5vw, 24px);
-        }
-
-        .toolbar .text-sm {
-            font-size: var(--base-font-size);
         }
 
         /* Node execution highlighting */
@@ -248,67 +192,11 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.02); }
         }
-
-        /* Media queries for different monitor sizes */
-
-        /* Small screens (laptops 1366x768 and below) */
-        @media (max-height: 768px) {
-            :root {
-                --toolbar-height: 50px;
-                --status-bar-height: 32px;
-                --base-font-size: 12px;
-                --button-padding-x: 8px;
-                --button-padding-y: 4px;
-            }
-        }
-
-        /* Medium screens (1080p) */
-        @media (min-height: 769px) and (max-height: 1080px) {
-            :root {
-                --toolbar-height: 60px;
-                --status-bar-height: 40px;
-                --base-font-size: 14px;
-                --button-padding-x: 12px;
-                --button-padding-y: 6px;
-            }
-        }
-
-        /* Large screens (1440p and above) */
-        @media (min-height: 1081px) {
-            :root {
-                --toolbar-height: 70px;
-                --status-bar-height: 48px;
-                --base-font-size: 16px;
-                --button-padding-x: 16px;
-                --button-padding-y: 8px;
-            }
-        }
-
-        /* Ultra-wide and 4K monitors */
-        @media (min-height: 1441px) {
-            :root {
-                --toolbar-height: 80px;
-                --status-bar-height: 56px;
-                --palette-width: 350px;
-                --base-font-size: 18px;
-            }
-        }
-
-        /* Ensure everything fits on screen */
-        @media (max-height: 600px) {
-            .toolbar button i {
-                display: none; /* Hide icons on very small screens */
-            }
-            :root {
-                --toolbar-height: 40px;
-                --status-bar-height: 28px;
-            }
-        }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col">
+<body class="bg-gray-900 text-white h-screen flex flex-col">
     <!-- Toolbar -->
-    <div class="toolbar flex items-center justify-between px-4 shrink-0">
+    <div class="toolbar p-3 flex items-center justify-between">
         <div class="flex items-center gap-4">
             <h1 class="text-xl font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
                 <i class="fas fa-project-diagram mr-2"></i>Runtime Logger
@@ -375,17 +263,17 @@
     </div>
 
     <!-- Main Content -->
-    <div class="main-content flex">
+    <div class="flex-1 flex">
         <!-- Node Palette -->
-        <div class="node-palette bg-gray-800 border-r border-gray-700 flex flex-col shrink-0">
-            <div class="p-4 border-b border-gray-700 shrink-0">
+        <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="p-4 border-b border-gray-700">
                 <h2 class="text-lg font-bold mb-4 text-green-400">
                     <i class="fas fa-shapes mr-2"></i>Node Palette
                 </h2>
-                <input type="text" id="searchNodes" placeholder="Search nodes..."
+                <input type="text" id="searchNodes" placeholder="Search nodes..." 
                     class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400">
             </div>
-            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4 min-h-0" id="nodePalette">
+            <div class="flex-1 overflow-y-auto overflow-x-hidden p-4" id="nodePalette" style="max-height: calc(100vh - 200px);">
                 <!-- Nodes will be rendered here -->
             </div>
         </div>
@@ -410,7 +298,7 @@
     </div>
 
     <!-- Status Bar -->
-    <div class="status-bar px-4 flex items-center justify-between shrink-0">
+    <div class="status-bar p-2 flex items-center justify-between text-sm">
         <div class="flex items-center gap-4">
             <span class="text-gray-400">Runtime Logger v1.0</span>
             <span id="connectionStatus" class="text-yellow-400">
@@ -439,7 +327,6 @@
         let nodeIdCounter = 1;
         let connectionIdCounter = 1;
         let currentWorkflowId = null;
-        let nodeOutputData = {};   // nodeOutputData[nodeId] = last output received via node_update
 
         // Configuration constants (remove magic values)
         const CONFIG = {
@@ -584,14 +471,14 @@
                 document.getElementById('workflowStatus').textContent = 'Offline';
             });
             
-            // Workflow execution updates (engine emits 'workflow_update')
+            // Workflow execution updates
             socket.on('workflow_update', (data) => {
                 console.log('Workflow update:', data);
                 if (data.workflowId === currentWorkflowId) {
                     handleWorkflowUpdate(data);
                 }
             });
-
+            
             // Node execution updates
             socket.on('node_update', (data) => {
                 console.log('Node update:', data);
@@ -715,61 +602,52 @@
             return icons[category] || 'fa-cube';
         }
 
-        // Handle workflow updates (engine sends { status: 'completed'|'error'|'stopped', workflowId })
+        // Handle workflow updates
         function handleWorkflowUpdate(data) {
-            const statusEl = document.getElementById('workflowStatus');
-            switch (data.status) {
+            const { status, workflowData } = data;
+            
+            switch (status) {
                 case 'running':
-                    statusEl.textContent = 'Running';
-                    statusEl.className = 'text-green-400 font-bold';
+                    document.getElementById('workflowStatus').textContent = 'Running';
+                    document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
                     break;
                 case 'completed':
-                    statusEl.textContent = 'Completed';
-                    statusEl.className = 'text-blue-400 font-bold';
+                    document.getElementById('workflowStatus').textContent = 'Completed';
+                    document.getElementById('workflowStatus').className = 'text-blue-400 font-bold';
                     clearNodeHighlights();
-                    currentWorkflowId = null;
                     break;
                 case 'error':
-                    statusEl.textContent = 'Error';
-                    statusEl.className = 'text-red-400 font-bold';
+                    document.getElementById('workflowStatus').textContent = 'Error';
+                    document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
                     clearNodeHighlights();
-                    currentWorkflowId = null;
-                    showNotification('Workflow Error', (data.data && data.data.error) || 'Workflow execution failed', 'error');
+                    alert('Workflow execution failed: ' + (workflowData.error || 'Unknown error'));
                     break;
                 case 'stopped':
-                    statusEl.textContent = 'Stopped';
-                    statusEl.className = 'text-yellow-400 font-bold';
+                    document.getElementById('workflowStatus').textContent = 'Stopped';
+                    document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
                     clearNodeHighlights();
-                    currentWorkflowId = null;
                     break;
             }
         }
 
-        // Handle node execution updates (engine sends { status, nodeId, workflowId, data })
+        // Handle node execution updates
         function handleNodeUpdate(data) {
-            const nodeElement = document.getElementById(data.nodeId);
-            if (!nodeElement) return;
-
-            switch (data.status) {
-                case 'running':
-                    highlightNode(nodeElement, 'running');
-                    break;
-                case 'completed':
-                    highlightNode(nodeElement, 'completed');
-                    // Store output data so the inspector can show it
-                    if (data.data && Object.keys(data.data).length > 0) {
-                        nodeOutputData[data.nodeId] = data.data;
-                        // If this node is currently selected, refresh the inspector
-                        if (selectedNode && selectedNode.id === data.nodeId) {
-                            showDataInspector(selectedNode, data.data);
-                        }
-                    }
-                    break;
-                case 'error':
-                    highlightNode(nodeElement, 'error');
-                    if (data.data) nodeOutputData[data.nodeId] = data.data;
-                    console.error('Node execution error:', data.data && data.data.error);
-                    break;
+            const { nodeId, status, data: nodeData } = data;
+            const nodeElement = document.getElementById(nodeId);
+            
+            if (nodeElement) {
+                switch (status) {
+                    case 'running':
+                        highlightNode(nodeElement, 'running');
+                        break;
+                    case 'completed':
+                        highlightNode(nodeElement, 'completed');
+                        break;
+                    case 'error':
+                        highlightNode(nodeElement, 'error');
+                        console.error('Node execution error:', nodeData.error);
+                        break;
+                }
             }
         }
 
@@ -797,42 +675,6 @@
             document.querySelectorAll('.node').forEach(node => {
                 node.classList.remove('node-running', 'node-completed', 'node-error');
             });
-        }
-
-        // Show the data inspector panel with a node's output
-        function showDataInspector(node, data) {
-            let panel = document.getElementById('dataInspector');
-            if (!panel) {
-                panel = document.createElement('div');
-                panel.id = 'dataInspector';
-                panel.style.cssText = [
-                    'position:fixed', 'bottom:48px', 'right:16px', 'width:340px',
-                    'max-height:320px', 'background:#1a1a2e', 'border:1px solid #10b981',
-                    'border-radius:8px', 'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
-                    'z-index:9999', 'display:flex', 'flex-direction:column',
-                    'font-family:monospace', 'font-size:12px'
-                ].join(';');
-                document.body.appendChild(panel);
-            }
-
-            // Filter out internal flags before displaying
-            const display = Object.fromEntries(
-                Object.entries(data).filter(([k]) => !k.startsWith('_'))
-            );
-
-            panel.innerHTML = `
-                <div style="padding:8px 12px;border-bottom:1px solid #10b981;display:flex;justify-content:space-between;align-items:center;background:#0d1117;border-radius:8px 8px 0 0">
-                    <span style="color:#10b981;font-weight:bold">${node.type} — Output</span>
-                    <button onclick="hideDataInspector()" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;padding:0 4px">✕</button>
-                </div>
-                <pre style="margin:0;padding:10px 12px;overflow:auto;flex:1;color:#e2e8f0;white-space:pre-wrap;word-break:break-all">${JSON.stringify(display, null, 2)}</pre>
-            `;
-            panel.style.display = 'flex';
-        }
-
-        function hideDataInspector() {
-            const panel = document.getElementById('dataInspector');
-            if (panel) panel.style.display = 'none';
         }
 
         // Show notification
@@ -1263,28 +1105,19 @@
             selectedNode = node;
             document.getElementById(node.id).classList.add('selected');
             document.getElementById('selectedNode').textContent = `Selected: ${node.type}`;
-            // Show output data if this node has run
-            if (nodeOutputData[node.id]) {
-                showDataInspector(node, nodeOutputData[node.id]);
-            } else {
-                hideDataInspector();
-            }
         }
 
         function deselectAllNodes() {
             document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
             selectedNode = null;
             document.getElementById('selectedNode').textContent = 'No selection';
-            hideDataInspector();
         }
 
-        // Update node input - mirrors value to node.config so the workflow engine can read it
+        // Update node input
         function updateNodeInput(nodeId, inputIndex, value) {
             const node = nodes.find(n => n.id === nodeId);
             if (node) {
                 node.inputs[inputIndex].value = value;
-                if (!node.config) node.config = {};
-                node.config[node.inputs[inputIndex].name] = value;
             }
         }
 
@@ -1295,38 +1128,34 @@
                 return;
             }
 
-            // Generate ID client-side and set it BEFORE the fetch so socket events
-            // arriving during execution are not missed due to a race condition.
-            const workflowId = `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            currentWorkflowId = workflowId;
-            nodeOutputData = {};
-            clearNodeHighlights();
-            hideDataInspector();
-
             try {
                 document.getElementById('workflowStatus').textContent = 'Starting...';
                 document.getElementById('workflowStatus').className = 'text-yellow-400 font-bold';
 
+                // Send workflow to server for execution
                 const response = await fetch('http://127.0.0.1:3000/api/workflows/execute', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         nodes: nodes,
                         connections: connections,
-                        workflowId: workflowId   // tell server to use our ID
+                        autoClicker: true // Enable auto-clicker integration
                     })
                 });
-
+                
                 const result = await response.json();
-
+                
                 if (result.success) {
+                    currentWorkflowId = result.workflowId;
                     document.getElementById('workflowStatus').textContent = 'Running';
                     document.getElementById('workflowStatus').className = 'text-green-400 font-bold';
-                    console.log('Workflow started:', workflowId);
+                    console.log('Workflow started:', result.workflowId);
                 } else {
                     throw new Error(result.error);
                 }
-
+                
             } catch (error) {
                 console.error('Failed to start workflow:', error);
                 document.getElementById('workflowStatus').textContent = 'Error';
@@ -1337,7 +1166,7 @@
 
         async function stopWorkflow() {
             if (!currentWorkflowId) {
-                showNotification('Stop Workflow', 'No workflow is currently running', 'warning');
+                alert('No workflow is currently running!');
                 return;
             }
 
@@ -1345,27 +1174,27 @@
                 const response = await fetch(`http://127.0.0.1:3000/api/workflows/${currentWorkflowId}/stop`, {
                     method: 'POST'
                 });
-
+                
                 const result = await response.json();
-
+                
                 if (result.success) {
                     document.getElementById('workflowStatus').textContent = 'Stopped';
                     document.getElementById('workflowStatus').className = 'text-red-400 font-bold';
                     currentWorkflowId = null;
                     clearNodeHighlights();
-                    showNotification('Workflow Stopped', 'Workflow has been stopped', 'success');
+                    console.log('Workflow stopped');
                 } else {
-                    throw new Error(result.error || 'Unknown error');
+                    throw new Error(result.error);
                 }
             } catch (error) {
                 console.error('Failed to stop workflow:', error);
-                showNotification('Stop Error', 'Failed to stop workflow: ' + error.message, 'error');
+                alert('Failed to stop workflow: ' + error.message);
             }
         }
 
         async function saveWorkflow() {
             const workflowData = {
-                name: 'My Workflow',
+                name: prompt('Enter workflow name:', 'My Workflow') || 'Untitled Workflow',
                 nodes: nodes,
                 connections: connections,
                 timestamp: new Date().toISOString(),
@@ -1407,7 +1236,7 @@
                 updateStats();
 
                 showNotification('Load Workflow', `Loaded: ${workflowData.name || 'Untitled'}`, 'success');
-                console.log('Workflow loaded:', workflowData.name);
+                console.log('Workflow loaded:', workflowData);
 
             } catch (error) {
                 showNotification('Load Error', 'Failed to load workflow: ' + error.message, 'error');
