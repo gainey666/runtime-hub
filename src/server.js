@@ -506,16 +506,20 @@ app.post('/api/workflows/execute', asyncErrorHandler(async (req, res) => {
     } else {
       console.log(`🚀 Workflow execution started: ${workflowId}`);
     }
+    
+    // Respond 200 immediately - don't wait for the workflow to finish
+    res.status(200).json({ 
+      success: true, 
+      workflowId: workflowId,
+      message: 'Workflow execution started'
+    });
   } catch (error) {
     console.error('Execute error:', error);
-    throw error;
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
-  
-  res.json({ 
-    success: true, 
-    workflowId: workflowId,
-    message: 'Workflow execution started'
-  });
 }));
 
 // Stop workflow

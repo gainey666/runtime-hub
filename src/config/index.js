@@ -121,21 +121,23 @@ let config = createConfig();
 
 // Environment-specific overrides
 function applyEnvironmentOverrides() {
-  if (isDevelopment) {
+  const nodeEnv = process.env.NODE_ENV;
+  
+  if (nodeEnv === 'development') {
     config.logging.level = 'debug';
     config.workflow.enableDebugLogging = true;
     config.security.enableCors = true;
     config.performance.enableProfiling = true;
   }
 
-  if (isProduction) {
+  if (nodeEnv === 'production') {
     config.logging.level = 'warn';
     config.workflow.enableDebugLogging = false;
     config.security.enableCors = false;
     config.performance.enableProfiling = false;
   }
 
-  if (isTest) {
+  if (nodeEnv === 'test') {
     config.logging.level = 'error';
     config.workflow.enableDebugLogging = false;
     config.security.enableCors = true;
