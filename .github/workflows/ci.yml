@@ -16,4 +16,4 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npx jest tests/unit/workflow-engine/additional.test.js tests/unit/workflow-engine/index.test.js --forceExit
+      - run: npx jest tests/unit/workflow-engine/additional.test.js tests/unit/workflow-engine/index.test.js --forceExit --detectOpenHandles=false
