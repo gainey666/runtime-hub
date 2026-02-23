@@ -94,3 +94,9 @@ release/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Communication folders (NEVER push to git)
+guides/
+guides back/
+guides to/
+docs/

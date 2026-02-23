@@ -388,9 +388,17 @@ ipcMain.handle('save-workflow', async (event, workflowData) => {
     filters: [{ name: 'JSON Files', extensions: ['json'] }],
     defaultPath: `workflow_${Date.now()}.json`
   });
-  if (result.canceled) return { canceled: true };
-  fs.writeFileSync(result.filePath, JSON.stringify(workflowData, null, 2), 'utf8');
-  return { canceled: false, filePath: result.filePath };
+
+  if (result.canceled) {
+    return { canceled: true };
+  }
+
+  try {
+    fs.writeFileSync(result.filePath, JSON.stringify(workflowData, null, 2));
+    return { canceled: false, filePath: result.filePath };
+  } catch (error) {
+    throw new Error(`Failed to save workflow: ${error.message}`);
+  }
 });
 
 ipcMain.handle('load-workflow', async () => {
@@ -398,9 +406,18 @@ ipcMain.handle('load-workflow', async () => {
     filters: [{ name: 'JSON Files', extensions: ['json'] }],
     properties: ['openFile']
   });
-  if (result.canceled || result.filePaths.length === 0) return { canceled: true };
-  const content = fs.readFileSync(result.filePaths[0], 'utf8');
-  return { canceled: false, data: JSON.parse(content) };
+
+  if (result.canceled) {
+    return { canceled: true };
+  }
+
+  try {
+    const data = fs.readFileSync(result.filePaths[0], 'utf8');
+    const workflowData = JSON.parse(data);
+    return { canceled: false, data: workflowData };
+  } catch (error) {
+    throw new Error(`Failed to load workflow: ${error.message}`);
+  }
 });
 
 // ── Region Selector IPC ───────────────────────────────────────────────────────
