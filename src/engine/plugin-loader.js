@@ -1,0 +1,214 @@
+/**
+ * Runtime Hub - Plugin Loader
+ * Loads and registers plugins from the plugins/ directory.
+ * Plugins can add new node types to the workflow engine.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Plugin Manifest Interface
+ * @typedef {Object} PluginManifest
+ * @property {string} name - Plugin name
+ * @property {string} version - Plugin version
+ * @property {string} description - Plugin description
+ * @property {PluginNode[]} nodes - Array of node definitions
+ */
+
+/**
+ * Plugin Node Interface
+ * @typedef {Object} PluginNode
+ * @property {string} type - Node type name
+ * @property {Object} ports - Port definition (follows ports.js pattern)
+ * @property {Function} executor - Executor function (follows node-adapters.js pattern)
+ * @property {Object} config - Default configuration schema
+ */
+
+class PluginLoader {
+    constructor() {
+        this.plugins = new Map();
+        this.pluginNodes = new Map();
+        this.pluginsDir = path.join(__dirname, '..', '..', 'plugins');
+    }
+
+    /**
+     * Load all plugins from the plugins directory
+     */
+    async loadPlugins() {
+        try {
+            // Create plugins directory if it doesn't exist
+            if (!fs.existsSync(this.pluginsDir)) {
+                fs.mkdirSync(this.pluginsDir, { recursive: true });
+                console.log('📁 Created plugins directory');
+                return;
+            }
+
+            // Read plugin directories
+            const pluginDirs = fs.readdirSync(this.pluginsDir, { withFileTypes: true })
+                .filter(dirent => dirent.isDirectory())
+                .map(dirent => dirent.name);
+
+            console.log(`🔌 Found ${pluginDirs.length} plugin directories`);
+
+            // Load each plugin
+            for (const pluginDir of pluginDirs) {
+                await this.loadPlugin(pluginDir);
+            }
+
+            console.log(`✅ Loaded ${this.plugins.size} plugins with ${this.pluginNodes.size} node types`);
+
+        } catch (error) {
+            console.error('❌ Error loading plugins:', error);
+        }
+    }
+
+    /**
+     * Load a single plugin
+     * @param {string} pluginDir - Plugin directory name
+     */
+    async loadPlugin(pluginDir) {
+        try {
+            const pluginPath = path.join(this.pluginsDir, pluginDir);
+            const indexPath = path.join(pluginPath, 'index.js');
+
+            if (!fs.existsSync(indexPath)) {
+                console.warn(`⚠️ Plugin ${pluginDir} missing index.js, skipping`);
+                return;
+            }
+
+            // Load plugin module
+            const pluginModule = require(indexPath);
+
+            // Validate plugin structure
+            if (!this.validatePlugin(pluginModule, pluginDir)) {
+                return;
+            }
+
+            // Register plugin
+            this.plugins.set(pluginDir, pluginModule);
+
+            // Register plugin nodes
+            for (const node of pluginModule.nodes || []) {
+                this.registerNode(node, pluginDir);
+            }
+
+            console.log(`✅ Loaded plugin: ${pluginModule.name} v${pluginModule.version}`);
+
+        } catch (error) {
+            console.error(`❌ Error loading plugin ${pluginDir}:`, error);
+        }
+    }
+
+    /**
+     * Validate plugin structure
+     * @param {Object} plugin - Plugin module
+     * @param {string} pluginDir - Plugin directory name
+     * @returns {boolean} - True if valid
+     */
+    validatePlugin(plugin, pluginDir) {
+        if (!plugin.name || typeof plugin.name !== 'string') {
+            console.error(`❌ Plugin ${pluginDir}: Missing or invalid name`);
+            return false;
+        }
+
+        if (!plugin.version || typeof plugin.version !== 'string') {
+            console.error(`❌ Plugin ${pluginDir}: Missing or invalid version`);
+            return false;
+        }
+
+        if (!Array.isArray(plugin.nodes)) {
+            console.error(`❌ Plugin ${pluginDir}: Missing or invalid nodes array`);
+            return false;
+        }
+
+        // Validate each node
+        for (const node of plugin.nodes) {
+            if (!this.validateNode(node, pluginDir)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate node structure
+     * @param {Object} node - Node definition
+     * @param {string} pluginDir - Plugin directory name
+     * @returns {boolean} - True if valid
+     */
+    validateNode(node, pluginDir) {
+        if (!node.type || typeof node.type !== 'string') {
+            console.error(`❌ Plugin ${pluginDir}: Node missing type`);
+            return false;
+        }
+
+        if (!node.ports || typeof node.ports !== 'object') {
+            console.error(`❌ Plugin ${pluginDir}: Node ${node.type} missing ports`);
+            return false;
+        }
+
+        if (!node.executor || typeof node.executor !== 'function') {
+            console.error(`❌ Plugin ${pluginDir}: Node ${node.type} missing executor`);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Register a node type
+     * @param {PluginNode} node - Node definition
+     * @param {string} pluginDir - Plugin directory name
+     */
+    registerNode(node, pluginDir) {
+        if (this.pluginNodes.has(node.type)) {
+            console.warn(`⚠️ Node type ${node.type} already registered, skipping`);
+            return;
+        }
+
+        this.pluginNodes.set(node.type, {
+            ...node,
+            plugin: pluginDir
+        });
+
+        console.log(`📝 Registered node type: ${node.type} from ${pluginDir}`);
+    }
+
+    /**
+     * Get all registered nodes
+     * @returns {Map<string, PluginNode>} - Map of node type to node definition
+     */
+    getRegisteredNodes() {
+        return this.pluginNodes;
+    }
+
+    /**
+     * Get node definition by type
+     * @param {string} nodeType - Node type
+     * @returns {PluginNode|null} - Node definition or null
+     */
+    getNode(nodeType) {
+        return this.pluginNodes.get(nodeType) || null;
+    }
+
+    /**
+     * Get all loaded plugins
+     * @returns {Map<string, Object>} - Map of plugin name to plugin module
+     */
+    getLoadedPlugins() {
+        return this.plugins;
+    }
+
+    /**
+     * Check if a node type is from a plugin
+     * @param {string} nodeType - Node type
+     * @returns {boolean} - True if from plugin
+     */
+    isPluginNode(nodeType) {
+        return this.pluginNodes.has(nodeType);
+    }
+}
+
+module.exports = PluginLoader;
