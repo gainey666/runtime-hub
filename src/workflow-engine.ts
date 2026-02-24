@@ -654,7 +654,7 @@ class WorkflowEngine extends EventEmitter {
   private addToHistory(workflow: Workflow): void {
     const historyEntry = {
       ...workflow,
-      nodeCount: workflow.nodes.length,
+      nodeCount: workflow.nodes?.length || 0,
       error: workflow.error || undefined
     };
 
@@ -668,10 +668,10 @@ class WorkflowEngine extends EventEmitter {
 
   getMetrics(): any {
     return {
-      total: this.performanceMetrics.totalWorkflows,
-      successful: this.performanceMetrics.successfulWorkflows,
-      failed: this.performanceMetrics.failedWorkflows,
-      successRate: this.performanceMetrics.totalWorkflows > 0 
+      totalWorkflows: this.performanceMetrics.totalWorkflows,
+      successfulWorkflows: this.performanceMetrics.successfulWorkflows,
+      failedWorkflows: this.performanceMetrics.failedWorkflows,
+      successRate: this.performanceMetrics.totalWorkflows > 0
         ? ((this.performanceMetrics.successfulWorkflows / this.performanceMetrics.totalWorkflows) * 100).toFixed(2) + '%'
         : '0.00%',
       averageExecutionTime: Math.round(this.performanceMetrics.averageExecutionTime),
