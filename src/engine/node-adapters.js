@@ -13,6 +13,14 @@ const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
 
+// Resource managers for automatic cleanup
+const fileResourceManager = require('../utils/file-resource-manager');
+const processManager = require('../utils/process-manager');
+
+// Setup auto-cleanup
+fileResourceManager.setupAutoCleanup();
+processManager.setupGracefulShutdown();
+
 // Constants for magic numbers
 const PROCESS_TIMEOUT_MS = 30000; // 30 second timeout for child processes
 const PROCESS_TERMINATE_DELAY_MS = 1000; // 1 second delay before force kill
@@ -229,7 +237,6 @@ async function executeShowMessage(node, workflow, connections, inputs = {}) {
 }
 
 async function executeWriteLog(node, workflow, connections, inputs = {}) {
-    const fs = require('fs').promises;
     const path = require('path');
     const config = node.config || {};
     const rawMessage = inputs.message !== undefined ? inputs.message : (config.message || '');
@@ -242,19 +249,29 @@ async function executeWriteLog(node, workflow, connections, inputs = {}) {
 
     console.log(`📝 Write Log: [${level}] ${message}`);
 
-    await fs.mkdir(path.dirname(logFile), { recursive: true }).catch(() => {});
-    await fs.appendFile(logFile, line, 'utf8');
+    try {
+        await fs.mkdir(path.dirname(logFile), { recursive: true });
+        
+        // Use resource manager for file tracking
+        const handle = await fs.open(logFile, 'a');
+        fileResourceManager.trackFile(logFile, handle);
+        
+        await handle.appendFile(line, 'utf8');
+        await handle.close(); // Properly close handle
+        
+        if (workflow.io && workflow.io.emit) {
+            workflow.io.emit('log_entry', {
+                source: 'WriteLog',
+                level,
+                message,
+                data: { workflowId: workflow.id, logFile }
+            });
+        }
 
-    if (workflow.io && workflow.io.emit) {
-        workflow.io.emit('log_entry', {
-            source: 'WriteLog',
-            level,
-            message,
-            data: { workflowId: workflow.id, logFile }
-        });
+        return { success: true, level, message, logFile, timestamp, logged: true };
+    } catch (error) {
+        return { success: false, error: error.message };
     }
-
-    return { success: true, level, message, logFile, timestamp, logged: true };
 }
 
 async function executeKeyboardInput(node, workflow, connections, inputs = {}) {
@@ -317,8 +334,6 @@ async function executeEncryptData(node, workflow, connections, inputs = {}) {
 // ─── PYTHON ───────────────────────────────────────────────────────────────────
 
 async function executePython(node, workflow, connections, inputs = {}) {
-    const { spawn } = require('child_process');
-    const fs = require('fs').promises;
     const os = require('os');
     const path = require('path');
     const code = inputs.code !== undefined ? String(inputs.code) : ((node.config && node.config.code) || '');
@@ -328,35 +343,50 @@ async function executePython(node, workflow, connections, inputs = {}) {
     console.log(`🐍 Executing Python code (${code.length} chars)`);
 
     const tmpFile = path.join(os.tmpdir(), `wf_python_${Date.now()}.py`);
-    await fs.writeFile(tmpFile, code, 'utf8');
+    
+    try {
+        await fs.writeFile(tmpFile, code, 'utf8');
+        fileResourceManager.trackTempFile(tmpFile);
 
-    return new Promise((resolve) => {
-        // Fixed shell injection vulnerability - use shell: false and proper argument array
-        const python = spawn('python', [tmpFile], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
-        let stdout = '', stderr = '';
+        return new Promise((resolve) => {
+            const python = spawn('python', [tmpFile], { 
+                shell: false, 
+                stdio: ['pipe', 'pipe', 'pipe'] 
+            });
+            
+            processManager.trackProcess('python-script', python);
+            
+            let stdout = '', stderr = '';
+            python.stdout.on('data', d => { stdout += d.toString(); });
+            python.stderr.on('data', d => { stderr += d.toString(); });
 
-        python.stdout.on('data', d => { stdout += d.toString(); });
-        python.stderr.on('data', d => { stderr += d.toString(); });
+            python.on('close', async (exitCode) => {
+                processManager.activeProcesses.delete('python-script');
+                await fileResourceManager.closeFile(tmpFile);
+                await fileResourceManager.cleanupTempFiles();
+                
+                resolve({
+                    success: exitCode === 0, 
+                    exitCode,
+                    output: stdout.trim(), 
+                    stderr: stderr.trim(),
+                    result: stdout.trim()
+                });
+            });
 
-        python.on('close', async (exitCode) => {
-            await fs.unlink(tmpFile).catch(() => {});
-            resolve({
-                success: exitCode === 0, exitCode,
-                output: stdout.trim(), stderr: stderr.trim(),
-                result: stdout.trim()  // port-named alias
+            python.on('error', async (err) => {
+                processManager.activeProcesses.delete('python-script');
+                await fileResourceManager.closeFile(tmpFile);
+                resolve({ 
+                    success: false, 
+                    error: err.message 
+                });
             });
         });
-
-        python.on('error', async (err) => {
-            await fs.unlink(tmpFile).catch(() => {});
-            resolve({ success: false, error: err.message });
-        });
-
-        setTimeout(() => {
-            python.kill();
-            resolve({ success: false, error: 'Python execution timed out after 30s' });
-        }, 30000);
-    });
+    } catch (error) {
+        await fileResourceManager.closeFile(tmpFile);
+        return { success: false, error: error.message };
+    }
 }
 
 // ─── SYSTEM ───────────────────────────────────────────────────────────────────
