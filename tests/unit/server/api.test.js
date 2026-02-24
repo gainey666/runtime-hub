@@ -21,7 +21,7 @@ describe('Server API Endpoints', () => {
   beforeEach(() => {
     // Create mock workflow engine
     mockWorkflowEngine = {
-      executeWorkflow: jest.fn(),
+      executeWorkflow: jest.fn().mockResolvedValue({ status: 'completed' }),
       stopWorkflow: jest.fn(),
       runningWorkflows: new Map(),
       getMetrics: jest.fn(() => ({
