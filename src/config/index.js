@@ -226,12 +226,21 @@ function getEnvConfig(env = process.env.NODE_ENV) {
   const envConfig = { ...freshConfig };
   
   // Default to development if no environment specified
-  if (!env || env === 'development') {
+  if (!env) {
     envConfig.logging.level = 'debug';
     envConfig.workflow.enableDebugLogging = true;
+    envConfig.security.enableCors = true;
+    envConfig.performance.enableProfiling = true;
+  } else if (env === 'development') {
+    envConfig.logging.level = 'debug';
+    envConfig.workflow.enableDebugLogging = true;
+    envConfig.security.enableCors = true;
+    envConfig.performance.enableProfiling = true;
   } else if (env === 'production') {
     envConfig.logging.level = 'warn';
     envConfig.workflow.enableDebugLogging = false;
+    envConfig.security.enableCors = false;
+    envConfig.performance.enableProfiling = false;
   } else if (env === 'test') {
     envConfig.logging.level = 'error';
     envConfig.workflow.enableDebugLogging = false;
