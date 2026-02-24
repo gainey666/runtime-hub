@@ -772,7 +772,7 @@ class WorkflowEngine extends EventEmitter {
   loadPlugins(): Promise<void> {
     // Load plugins using the plugin loader
     const PluginLoader = require('../engine/plugin-loader');
-    const pluginLoader = new PluginLoader();
+    const pluginLoader = new PluginLoader(require('path').join(__dirname, '..', '..', 'plugins'));
     
     return pluginLoader.loadPlugins().then(() => {
       console.log('🔌 Plugin loading complete');

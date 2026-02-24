@@ -6,36 +6,13 @@
  * Port definitions live in ./engine/ports.js
  */
 
+const path = require('path');
 const { EventEmitter } = require('events');
 const { NODE_PORT_MAP, CONTROL_FLOW_OUTPUT_PORTS } = require('./engine/ports');
 const adapters = require('./engine/node-adapters');
 const PluginLoader = require('./engine/plugin-loader');
 
-// Check if we are in a test environment (e.g., via Jest)
 const isTestEnvironment = typeof jest !== 'undefined' || process.env.NODE_ENV === 'test';
-
-// SOLUTION: Override jest.fn() behavior for tests
-if (isTestEnvironment && typeof jest !== 'undefined') {
-    const originalJestFn = jest.fn;
-    jest.fn = function(...args) {
-        const mockFn = originalJestFn.apply(this, args);
-        // Default to returning a resolved promise for executeWorkflow
-        if (args.length === 0) {
-            return mockFn.mockReturnValue(Promise.resolve({ status: 'completed' }));
-        }
-        // Also handle cases where executeWorkflow is the property name
-        return mockFn;
-    };
-    
-    // Override mockReturnValue to return promises for executeWorkflow
-    const originalMockReturnValue = mockFn.mockReturnValue;
-    mockFn.mockReturnValue = function(value) {
-        if (value === undefined) {
-            return originalMockReturnValue.call(this, Promise.resolve({ status: 'completed' }));
-        }
-        return originalMockReturnValue.call(this, value);
-    };
-}
 
 class WorkflowEngine extends EventEmitter {
     constructor(io, config = {}) {
@@ -72,7 +49,7 @@ class WorkflowEngine extends EventEmitter {
             errorsByType: new Map()
         };
 
-        this.pluginLoader = new PluginLoader();
+        this.pluginLoader = new PluginLoader(path.join(__dirname, '..', 'plugins'));
         this.initializeNodeExecutors();
     }
 

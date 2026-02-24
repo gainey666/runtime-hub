@@ -799,7 +799,7 @@ if (require.main === module) {
   }
 
   // Initialize plugin loader
-  const pluginLoader = new PluginLoader();
+  const pluginLoader = new PluginLoader(path.join(__dirname, '..', 'plugins'));
   pluginLoader.loadPlugins().then(() => {
     console.log('🔌 Plugin loading complete');
   }).catch(error => {
