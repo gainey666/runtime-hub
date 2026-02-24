@@ -17,6 +17,12 @@ const { spawn } = require('child_process');
 const PROCESS_TIMEOUT_MS = 30000; // 30 second timeout for child processes
 const PROCESS_TERMINATE_DELAY_MS = 1000; // 1 second delay before force kill
 
+// Loop safety constants
+const MAX_LOOP_ITERATIONS = parseInt(process.env.MAX_LOOP_ITERATIONS) || 1000;
+const LOOP_WARNING_THRESHOLD = Math.floor(MAX_LOOP_ITERATIONS * 0.8);
+const MAX_LOOP_EXECUTION_TIME = 30000; // 30 seconds
+const MEMORY_LIMIT_MB = 500; // 500MB memory limit
+
 // ─── CONTROL FLOW ─────────────────────────────────────────────────────────────
 
 async function executeStart(node, workflow, connections, inputs = {}) {
@@ -68,16 +74,43 @@ async function executeWait(node, workflow, connections, inputs = {}) {
 }
 
 async function executeLoop(node, workflow, connections, inputs = {}) {
+    const startTime = Date.now();
     const config = node.config || {};
-    const iterations = Math.max(1, parseInt(config.iterations) || 1);
+    const maxIterations = Math.min(Math.max(1, parseInt(config.iterations) || 1), MAX_LOOP_ITERATIONS);
     const delayBetween = parseInt(config.delayBetween) || 0;
+    let iterationCount = 0;
 
-    console.log(`🔄 Looping ${iterations} times`);
+    console.log(`🔄 Looping (max ${maxIterations} iterations)`);
 
     const results = [];
-    for (let i = 0; i < iterations; i++) {
+    while (iterationCount < maxIterations) {
+        iterationCount++;
+        
+        // Safety check 1: Execution time limit
+        if (Date.now() - startTime > MAX_LOOP_EXECUTION_TIME) {
+            throw new Error(`Loop exceeded maximum execution time (${MAX_LOOP_EXECUTION_TIME}ms)`);
+        }
+        
+        // Safety check 2: Memory usage monitoring
+        if (iterationCount % 100 === 0) {
+            const memoryUsage = process.memoryUsage();
+            if (memoryUsage.heapUsed > MEMORY_LIMIT_MB * 1024 * 1024) {
+                throw new Error(`Loop exceeded memory limit (${MEMORY_LIMIT_MB}MB)`);
+            }
+        }
+        
+        // Safety check 3: Warning threshold
+        if (iterationCount === LOOP_WARNING_THRESHOLD) {
+            console.warn(`⚠️ Loop approaching iteration limit: ${iterationCount}/${maxIterations}`);
+        }
+        
+        // Safety check 4: Manual workflow stop
+        if (workflow.status === 'stopped') {
+            throw new Error('Loop terminated - workflow was stopped');
+        }
+        
         if (workflow.cancelled) break;
-        console.log(`🔄 Loop iteration ${i + 1}/${iterations}`);
+        console.log(`🔄 Loop iteration ${iterationCount}/${maxIterations}`);
 
         const connectedConnections = connections.filter(c => c.from.nodeId === node.id);
         for (const conn of connectedConnections) {
@@ -85,17 +118,25 @@ async function executeLoop(node, workflow, connections, inputs = {}) {
             if (targetNode) {
                 // Use workflow.traverseNode set by the engine
                 const result = await workflow.traverseNode(targetNode, connections);
-                results.push({ iteration: i + 1, nodeId: targetNode.id, result });
+                results.push({ iteration: iterationCount, nodeId: targetNode.id, result });
             }
         }
 
-        if (delayBetween > 0 && i < iterations - 1) {
+        if (delayBetween > 0 && iterationCount < maxIterations) {
             await new Promise(resolve => setTimeout(resolve, delayBetween));
         }
     }
+    
+    // Final iteration limit check
+    if (iterationCount >= MAX_LOOP_ITERATIONS) {
+        throw new Error(`Loop exceeded maximum iterations (${MAX_LOOP_ITERATIONS})`);
+    }
 
-    // _skipAutoTraverse: loop manages its own traversal above
-    return { success: true, iterations, completed: results.length, results, _skipAutoTraverse: true };
+    return { 
+        iterations: iterationCount, 
+        duration: Date.now() - startTime,
+        results 
+    };
 }
 
 // ─── I/O ──────────────────────────────────────────────────────────────────────
