@@ -216,10 +216,11 @@ class PluginLoader {
             return;
         }
 
-        this.pluginNodes.set(node.type, {
-            ...node,
-            plugin: pluginDir
-        });
+        // Store the original node object, but add plugin info
+        if (!node.plugin) {
+            node.plugin = pluginDir;
+        }
+        this.pluginNodes.set(node.type, node);
 
         console.log(`📝 Registered node type: ${node.type} from ${pluginDir}`);
     }

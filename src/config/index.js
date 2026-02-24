@@ -49,7 +49,7 @@ function createConfig() {
 
   // Logging configuration
   logging: {
-    level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
     format: process.env.LOG_FORMAT || 'json',
     enableFileLogging: process.env.ENABLE_FILE_LOGGING === 'true',
     logDirectory: process.env.LOG_DIRECTORY || path.join(__dirname, '..', 'logs'),
@@ -225,7 +225,8 @@ function getEnvConfig(env = process.env.NODE_ENV) {
   
   const envConfig = { ...freshConfig };
   
-  if (env === 'development') {
+  // Default to development if no environment specified
+  if (!env || env === 'development') {
     envConfig.logging.level = 'debug';
     envConfig.workflow.enableDebugLogging = true;
   } else if (env === 'production') {
