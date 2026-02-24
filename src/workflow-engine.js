@@ -8,6 +8,9 @@
 
 const path = require('path');
 const { EventEmitter } = require('events');
+
+// Constants for magic numbers
+const RETRY_DELAY_MS = 1000; // Base delay for node retry logic
 const { NODE_PORT_MAP, CONTROL_FLOW_OUTPUT_PORTS } = require('./engine/ports');
 const adapters = require('./engine/node-adapters');
 const PluginLoader = require('./engine/plugin-loader');
@@ -115,29 +118,28 @@ class WorkflowEngine extends EventEmitter {
                 throw new Error(`Maximum concurrent workflows (${this.config.workflow.maxConcurrentWorkflows}) reached`);
             }
 
-            const startNode = nodes.find(node => node.type === 'Start');
+            const startNode = nodes && nodes.find(node => node.type === 'Start');
             if (!startNode) {
                 throw new Error('No Start node found in workflow');
             }
 
-            // Initialize workflow and reserve slot BEFORE any awaits
+            // Initialize workflow object first
             workflow = {
                 id: workflowId,
                 nodes: nodes || [],
                 connections: connections || [],
                 executionState: new Map(),
                 startTime: Date.now(),
-                status: 'running',
+                status: 'initializing',
                 cancelled: false,
                 completedNodes: 0
             };
-            this.runningWorkflows.set(workflowId, workflow);
 
-            // Attach helpers node-adapters need
-            workflow.io = this.io;
-            workflow.emitFn = (event, data) => this.emit(event, data);
+            // Create node lookup map for O(1) access
+            const nodeMap = new Map();
+            (nodes || []).forEach(node => nodeMap.set(node.id, node));
 
-            // Create per-run workspace for temp files
+            // Create per-run workspace for temp files BEFORE adding to runningWorkflows
             const assetsDir = await this.createRunWorkspace(workflowId);
             workflow.context = {
                 runId: workflowId,
@@ -146,9 +148,20 @@ class WorkflowEngine extends EventEmitter {
                 assetsDir
             };
 
+            // Attach helpers node-adapters need
+            workflow.io = this.io;
+            workflow.emitFn = (event, data) => this.emit(event, data);
+
             // traverseNode allows Loop adapter to recurse without coupling to `this`
             workflow.traverseNode = (targetNode, conns) =>
                 this.executeNode(workflow, targetNode, conns || connections);
+
+            // Add nodeMap to workflow for O(1) node lookups
+            workflow.nodeMap = nodeMap;
+
+            // Set status to running and add to runningWorkflows ATOMICALLY
+            workflow.status = 'running';
+            this.runningWorkflows.set(workflowId, workflow);
 
             await Promise.race([
                 this.executeNode(workflow, startNode, connections),
@@ -311,7 +324,7 @@ class WorkflowEngine extends EventEmitter {
                         });
                         
                         // Wait before retry
-                        await new Promise(resolve => setTimeout(resolve, 1000 * nodeState.retryCount));
+                        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * nodeState.retryCount));
                         
                         // Retry the node execution
                         return this.executeNode(workflow, node, connections);
@@ -351,7 +364,7 @@ class WorkflowEngine extends EventEmitter {
         });
 
         const connectedNodes = outgoingConns
-            .map(conn => workflow.nodes ? workflow.nodes.find(n => n.id === conn.to.nodeId) : null)
+            .map(conn => workflow.nodeMap ? workflow.nodeMap.get(conn.to.nodeId) : null)
             .filter(Boolean);
 
         for (const connectedNode of connectedNodes) {
@@ -370,23 +383,23 @@ class WorkflowEngine extends EventEmitter {
         // Guard against undefined connections
         if (!connections || !Array.isArray(connections)) return inputs;
 
-        const incomingConns = connections.filter(c => c.to.nodeId === node.id);
+        const incomingConns = connections.filter(c => c.to && c.to.nodeId === node.id);
         if (incomingConns.length === 0) return inputs;
 
         const portMap = NODE_PORT_MAP[node.type];
 
         for (const conn of incomingConns) {
-            const upstreamResult = workflow.context.values[conn.from.nodeId];
+            const upstreamResult = workflow.context.values && workflow.context.values[conn.from && conn.from.nodeId];
             if (upstreamResult === undefined) continue;
 
             const inputPortName = portMap
-                ? (portMap.inputs[conn.to.portIndex] || `input_${conn.to.portIndex}`)
-                : `input_${conn.to.portIndex}`;
+                ? (portMap.inputs[conn.to && conn.to.portIndex] || `input_${conn.to && conn.to.portIndex}`)
+                : `input_${conn.to && conn.to.portIndex}`;
 
-            const fromNode = workflow.nodes ? workflow.nodes.find(n => n.id === conn.from.nodeId) : null;
+            const fromNode = workflow.nodeMap ? workflow.nodeMap.get(conn.from.nodeId) : null;
             const fromPortMap = fromNode ? NODE_PORT_MAP[fromNode.type] : null;
             const outputPortName = fromPortMap
-                ? (fromPortMap.outputs[conn.from.portIndex] || null)
+                ? (fromPortMap.outputs[conn.from && conn.from.portIndex] || null)
                 : null;
 
             if (outputPortName && CONTROL_FLOW_OUTPUT_PORTS.has(outputPortName)) continue;

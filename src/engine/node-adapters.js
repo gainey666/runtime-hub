@@ -9,6 +9,14 @@
  * The Loop node uses workflow.traverseNode(targetNode, connections) for traversal.
  */
 
+const fs = require('fs').promises;
+const path = require('path');
+const { spawn } = require('child_process');
+
+// Constants for magic numbers
+const PROCESS_TIMEOUT_MS = 30000; // 30 second timeout for child processes
+const PROCESS_TERMINATE_DELAY_MS = 1000; // 1 second delay before force kill
+
 // ─── CONTROL FLOW ─────────────────────────────────────────────────────────────
 
 async function executeStart(node, workflow, connections, inputs = {}) {
@@ -73,7 +81,7 @@ async function executeLoop(node, workflow, connections, inputs = {}) {
 
         const connectedConnections = connections.filter(c => c.from.nodeId === node.id);
         for (const conn of connectedConnections) {
-            const targetNode = workflow.nodes.find(n => n.id === conn.to.nodeId);
+            const targetNode = workflow.nodeMap ? workflow.nodeMap.get(conn.to.nodeId) : null;
             if (targetNode) {
                 // Use workflow.traverseNode set by the engine
                 const result = await workflow.traverseNode(targetNode, connections);
@@ -378,7 +386,7 @@ async function executeStartProcess(node, workflow, connections, inputs = {}) {
             child.stdout?.on('data', (data) => { stdout += data.toString(); });
             child.stderr?.on('data', (data) => { stderr += data.toString(); });
 
-            const timeout = setTimeout(() => { child.kill(); reject(new Error('Process timeout')); }, 30000);
+            const timeout = setTimeout(() => { child.kill(); reject(new Error('Process timeout')); }, PROCESS_TIMEOUT_MS);
 
             child.on('close', (code) => {
                 clearTimeout(timeout);
@@ -398,7 +406,7 @@ async function executeKillProcess(node, workflow, connections, inputs = {}) {
 
     try {
         process.kill(processId, 'SIGTERM');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, PROCESS_TERMINATE_DELAY_MS));
 
         try {
             process.kill(processId, 0);

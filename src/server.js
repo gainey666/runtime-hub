@@ -731,38 +731,62 @@ app.get('/health', asyncErrorHandler(async (req, res) => {
 app.use(handleError);
 
 // Setup workflow event listeners for dashboard
-workflowEngine.on('workflowStarted', (workflowId) => {
-  io.emit('execution_update', {
-    type: 'workflow_started',
-    workflowId: workflowId,
-    timestamp: new Date().toISOString()
-  });
+const workflowEventHandlers = [
+  ['workflowStarted', (workflowId) => {
+    io.emit('execution_update', {
+      type: 'workflow_started',
+      workflowId: workflowId,
+      timestamp: new Date().toISOString()
+    });
+  }],
+  ['workflowCompleted', (workflowId) => {
+    io.emit('execution_update', {
+      type: 'workflow_completed',
+      workflowId: workflowId,
+      timestamp: new Date().toISOString()
+    });
+  }],
+  ['nodeStarted', (data) => {
+    io.emit('node_update', {
+      type: 'node_started',
+      nodeId: data.nodeId,
+      workflowId: data.workflowId,
+      timestamp: new Date().toISOString()
+    });
+  }],
+  ['nodeCompleted', (data) => {
+    io.emit('node_update', {
+      type: 'node_completed',
+      nodeId: data.nodeId,
+      workflowId: data.workflowId,
+      timestamp: new Date().toISOString()
+    });
+  }]
+];
+
+// Add all event listeners
+workflowEventHandlers.forEach(([event, handler]) => {
+  workflowEngine.on(event, handler);
 });
 
-workflowEngine.on('workflowCompleted', (workflowId) => {
-  io.emit('execution_update', {
-    type: 'workflow_completed',
-    workflowId: workflowId,
-    timestamp: new Date().toISOString()
+// Cleanup function for graceful shutdown
+const cleanupWorkflowListeners = () => {
+  workflowEventHandlers.forEach(([event, handler]) => {
+    workflowEngine.off(event, handler);
   });
+};
+
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, cleaning up workflow listeners...');
+  cleanupWorkflowListeners();
+  process.exit(0);
 });
 
-workflowEngine.on('nodeStarted', (data) => {
-  io.emit('node_update', {
-    type: 'node_started',
-    nodeId: data.nodeId,
-    workflowId: data.workflowId,
-    timestamp: new Date().toISOString()
-  });
-});
-
-workflowEngine.on('nodeCompleted', (data) => {
-  io.emit('node_update', {
-    type: 'node_completed',
-    nodeId: data.nodeId,
-    workflowId: data.workflowId,
-    timestamp: new Date().toISOString()
-  });
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, cleaning up workflow listeners...');
+  cleanupWorkflowListeners();
+  process.exit(0);
 });
 
 // Port availability check

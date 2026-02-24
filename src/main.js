@@ -396,7 +396,8 @@ ipcMain.handle('save-workflow', async (event, workflowData) => {
   }
 
   try {
-    fs.writeFileSync(result.filePath, JSON.stringify(workflowData, null, 2));
+    const jsonData = JSON.stringify(workflowData, null, 2);
+    await fs.promises.writeFile(result.filePath, jsonData);
     return { canceled: false, filePath: result.filePath };
   } catch (error) {
     throw new Error(`Failed to save workflow: ${error.message}`);
