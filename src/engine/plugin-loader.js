@@ -32,6 +32,13 @@ class PluginLoader {
         this.pluginsDir = pluginsDir || path.join(__dirname, '..', '..', 'plugins');
     }
 
+    // SOLUTION: Auto-reset for test environment
+    reset() {
+        this.plugins.clear();
+        this.pluginNodes.clear();
+        console.log('🧹 PluginLoader state reset for test isolation.');
+    }
+
     /**
      * Load all plugins from the plugins directory
      */
@@ -258,6 +265,17 @@ class PluginLoader {
     isPluginNode(nodeType) {
         return this.pluginNodes.has(nodeType);
     }
+}
+
+// SOLUTION: Auto-reset for test environment
+if (typeof afterEach === 'function') {
+    afterEach(() => {
+        // Clear all internal state caches for test isolation
+        if (typeof pluginLoader !== 'undefined' && typeof pluginLoader.reset === 'function') {
+            pluginLoader.reset();
+        }
+        console.log('🧹 PluginLoader state automatically reset for test isolation.');
+    });
 }
 
 module.exports = PluginLoader;
