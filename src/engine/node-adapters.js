@@ -74,44 +74,69 @@ async function executeWait(node, workflow, connections, inputs = {}) {
 }
 
 async function executeLoop(node, workflow, connections, inputs = {}) {
-    const startTime = Date.now();
     const config = node.config || {};
-    const maxIterations = Math.min(Math.max(1, parseInt(config.iterations) || 1), MAX_LOOP_ITERATIONS);
+    const maxIterations = Math.max(1, parseInt(config.maxIterations) || MAX_LOOP_ITERATIONS);
     const delayBetween = parseInt(config.delayBetween) || 0;
+    
+    console.log(`🔄 Looping up to ${maxIterations} times`);
+    
+    const startTime = Date.now();
     let iterationCount = 0;
-
-    console.log(`🔄 Looping (max ${maxIterations} iterations)`);
-
     const results = [];
+    
+    // Set initial memory baseline
+    const initialMemoryUsage = process.memoryUsage();
+    const maxMemoryBytes = MEMORY_LIMIT_MB * 1024 * 1024;
+    
     while (iterationCount < maxIterations) {
         iterationCount++;
         
-        // Safety check 1: Execution time limit
-        if (Date.now() - startTime > MAX_LOOP_EXECUTION_TIME) {
+        // 🔒 SAFETY CHECK #1: Manual workflow interruption
+        if (workflow.cancelled || workflow.status === 'stopped') {
+            console.log(`🛑 Loop interrupted by user after ${iterationCount} iterations`);
+            break;
+        }
+        
+        // 🔒 SAFETY CHECK #2: Time limit exceeded
+        const elapsedTime = Date.now() - startTime;
+        if (elapsedTime > MAX_LOOP_EXECUTION_TIME) {
+            console.error(`⏰ Loop exceeded time limit of ${MAX_LOOP_EXECUTION_TIME}ms`);
+            workflow.io?.emit('log_entry', {
+                source: 'LoopSafety',
+                level: 'error',
+                message: `Loop exceeded maximum execution time (${MAX_LOOP_EXECUTION_TIME}ms)`,
+                data: { workflowId: workflow.id, iterations: iterationCount }
+            });
             throw new Error(`Loop exceeded maximum execution time (${MAX_LOOP_EXECUTION_TIME}ms)`);
         }
         
-        // Safety check 2: Memory usage monitoring
-        if (iterationCount % 100 === 0) {
-            const memoryUsage = process.memoryUsage();
-            if (memoryUsage.heapUsed > MEMORY_LIMIT_MB * 1024 * 1024) {
-                throw new Error(`Loop exceeded memory limit (${MEMORY_LIMIT_MB}MB)`);
-            }
+        // 🔒 SAFETY CHECK #3: Memory usage exceeded
+        const currentMemoryUsage = process.memoryUsage();
+        if (currentMemoryUsage.heapUsed > maxMemoryBytes) {
+            console.error(`🧠 Loop exceeded memory limit of ${MEMORY_LIMIT_MB}MB`);
+            workflow.io?.emit('log_entry', {
+                source: 'LoopSafety',
+                level: 'error',
+                message: `Loop exceeded memory limit (${MEMORY_LIMIT_MB}MB)`,
+                data: { workflowId: workflow.id, memoryUsage: currentMemoryUsage }
+            });
+            throw new Error(`Loop exceeded memory limit (Heap used: ${Math.round(currentMemoryUsage.heapUsed / 1024 / 1024)}MB)`);
         }
         
-        // Safety check 3: Warning threshold
+        // 🔔 SAFETY WARNING: Approaching iteration limit
         if (iterationCount === LOOP_WARNING_THRESHOLD) {
             console.warn(`⚠️ Loop approaching iteration limit: ${iterationCount}/${maxIterations}`);
+            workflow.io?.emit('log_entry', {
+                source: 'LoopSafety',
+                level: 'warning',
+                message: `Loop approaching iteration limit (${iterationCount}/${maxIterations})`,
+                data: { workflowId: workflow.id }
+            });
         }
         
-        // Safety check 4: Manual workflow stop
-        if (workflow.status === 'stopped') {
-            throw new Error('Loop terminated - workflow was stopped');
-        }
-        
-        if (workflow.cancelled) break;
         console.log(`🔄 Loop iteration ${iterationCount}/${maxIterations}`);
-
+        
+        // Execute loop body (existing logic)
         const connectedConnections = connections.filter(c => c.from.nodeId === node.id);
         for (const conn of connectedConnections) {
             const targetNode = workflow.nodeMap ? workflow.nodeMap.get(conn.to.nodeId) : null;
@@ -121,22 +146,69 @@ async function executeLoop(node, workflow, connections, inputs = {}) {
                 results.push({ iteration: iterationCount, nodeId: targetNode.id, result });
             }
         }
-
+        
+        // Check if we should continue (condition-based loops)
+        if (config.condition) {
+            const shouldContinue = await evaluateLoopCondition(node, workflow, inputs);
+            if (!shouldContinue) {
+                console.log(`✅ Loop condition met - stopping after ${iterationCount} iterations`);
+                break;
+            }
+        }
+        
+        // Add delay between iterations if specified
         if (delayBetween > 0 && iterationCount < maxIterations) {
             await new Promise(resolve => setTimeout(resolve, delayBetween));
         }
     }
     
-    // Final iteration limit check
-    if (iterationCount >= MAX_LOOP_ITERATIONS) {
-        throw new Error(`Loop exceeded maximum iterations (${MAX_LOOP_ITERATIONS})`);
+    // 🔒 SAFETY CHECK #4: Hit maximum iterations
+    if (iterationCount >= maxIterations) {
+        console.error(`🚫 Loop reached maximum iterations (${maxIterations})`);
+        workflow.io?.emit('log_entry', {
+            source: 'LoopSafety',
+            level: 'error',
+            message: `Loop reached maximum iteration limit (${maxIterations})`,
+            data: { workflowId: workflow.id }
+        });
+        throw new Error(`Loop exceeded maximum iterations (${maxIterations})`);
     }
-
+    
+    // Return final results with performance metrics
+    const finalMemoryUsage = process.memoryUsage();
+    const memoryIncreaseMB = Math.round((finalMemoryUsage.heapUsed - initialMemoryUsage.heapUsed) / 1024 / 1024);
+    
     return { 
+        success: true, 
         iterations: iterationCount, 
-        duration: Date.now() - startTime,
-        results 
+        executionTime: Date.now() - startTime,
+        memoryIncreaseMB,
+        completed: results.length, 
+        results, 
+        _skipAutoTraverse: true,
+        performance: {
+            iterationsPerSecond: iterationCount / ((Date.now() - startTime) / 1000),
+            averageIterationTime: (Date.now() - startTime) / iterationCount,
+            peakMemoryMB: Math.round(finalMemoryUsage.heapUsed / 1024 / 1024)
+        }
     };
+}
+
+// Helper function for condition-based loops
+async function evaluateLoopCondition(node, workflow, inputs) {
+    const config = node.config || {};
+    const condition = config.condition || '';
+    const operator = config.operator || 'equals';
+    const value = config.value || '';
+    
+    // Simple condition evaluation (can be extended)
+    switch (operator) {
+        case 'equals': return condition === value;
+        case 'not_equals': return condition !== value;
+        case 'less_than': return parseFloat(condition) < parseFloat(value);
+        case 'greater_than': return parseFloat(condition) > parseFloat(value);
+        default: return false;
+    }
 }
 
 // ─── I/O ──────────────────────────────────────────────────────────────────────
