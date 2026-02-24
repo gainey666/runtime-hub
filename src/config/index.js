@@ -41,7 +41,7 @@ function createConfig() {
 
   // Workflow engine configuration
   workflow: {
-    maxConcurrentWorkflows: parseInt(process.env.MAX_CONCURRENT_WORKFLOWS) || 5,
+    maxConcurrentWorkflows: 5, // Default value, will be overridden by applyEnvironmentOverrides if valid
     defaultTimeout: parseInt(process.env.WORKFLOW_DEFAULT_TIMEOUT) || 60000, // 1 minute
     maxNodeExecutionTime: parseInt(process.env.MAX_NODE_EXECUTION_TIME) || 30000, // 30 seconds
     enableDebugLogging: process.env.WORKFLOW_DEBUG === 'true'
@@ -143,6 +143,13 @@ function applyEnvironmentOverrides() {
     config.security.enableCors = true;
     config.performance.enableProfiling = false;
   }
+  
+  // Apply environment variables with validation
+  const maxWorkflows = parseInt(process.env.MAX_CONCURRENT_WORKFLOWS);
+  if (!isNaN(maxWorkflows) && maxWorkflows >= 1 && maxWorkflows <= 50) {
+    config.workflow.maxConcurrentWorkflows = maxWorkflows;
+  }
+  // If invalid, keep the default value from createConfig()
 }
 
 applyEnvironmentOverrides();
@@ -171,10 +178,12 @@ function validateConfig(configToValidate = null) {
     errors.push('Python agent timeout must be between 1s and 5 minutes');
   }
 
-  // Check workflow limits from environment variable
-  const maxWorkflowsFromEnv = process.env.MAX_CONCURRENT_WORKFLOWS;
-  if (maxWorkflowsFromEnv && (isNaN(parseInt(maxWorkflowsFromEnv)) || parseInt(maxWorkflowsFromEnv) < 1 || parseInt(maxWorkflowsFromEnv) > 50)) {
-    errors.push('Max concurrent workflows must be between 1 and 50');
+  // Check workflow limits from config object (not environment variable)
+  if (configToValidate.workflow && configToValidate.workflow.maxConcurrentWorkflows) {
+    const maxWorkflows = configToValidate.workflow.maxConcurrentWorkflows;
+    if (isNaN(maxWorkflows) || maxWorkflows < 1 || maxWorkflows > 50) {
+      errors.push('Max concurrent workflows must be between 1 and 50');
+    }
   }
 
   if (errors.length > 0) {
@@ -198,6 +207,13 @@ function validateCurrentConfig() {
   // Update global config before validation
   config = createConfig();
   applyEnvironmentOverrides();
+  
+  // Also validate environment variables directly for test cases
+  const maxWorkflowsFromEnv = process.env.MAX_CONCURRENT_WORKFLOWS;
+  if (maxWorkflowsFromEnv && (isNaN(parseInt(maxWorkflowsFromEnv)) || parseInt(maxWorkflowsFromEnv) < 1 || parseInt(maxWorkflowsFromEnv) > 50)) {
+    throw new Error('Max concurrent workflows must be between 1 and 50');
+  }
+  
   return validateConfig(config);
 }
 
