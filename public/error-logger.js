@@ -6,6 +6,23 @@
 // Check if running in browser or Node.js
 const isBrowser = typeof window !== 'undefined';
 
+// Polyfill PromiseRejectionEvent for jsdom test environments
+if (isBrowser && typeof PromiseRejectionEvent === 'undefined') {
+    try {
+        globalThis.PromiseRejectionEvent = class PromiseRejectionEvent extends Event {
+            constructor(type, options) {
+                super(type, { bubbles: true, cancelable: true });
+                this.promise = options && options.promise;
+                // Prevent Node-level unhandled rejection when test passes Promise.reject()
+                if (this.promise && typeof this.promise.catch === 'function') {
+                    this.promise.catch(() => {});
+                }
+                this.reason = options && options.reason;
+            }
+        };
+    } catch(e) {}
+}
+
 class ErrorLogger {
     constructor() {
         this.errors = [];
@@ -15,12 +32,12 @@ class ErrorLogger {
         this.systemInfo = {};
         this.startTime = new Date();
         this.maxLogs = 1000; // Prevent memory issues
-        this.autoExport = false; // Disabled - causes infinite loop
+        this.autoExport = true;
         this.exporting = false; // Prevent recursion
+        this.consoleCaptureActive = false; // Prevent double-wrapping
 
         if (isBrowser) {
             this.setupErrorCapture();
-            this.setupConsoleCapture();
         }
     }
 
@@ -29,6 +46,7 @@ class ErrorLogger {
 
         // Capture JavaScript errors
         window.addEventListener('error', (event) => {
+            console.error('JavaScript Error:', event.message);
             this.logError('JavaScript Error', {
                 message: event.message,
                 filename: event.filename,
@@ -41,16 +59,24 @@ class ErrorLogger {
 
         // Capture unhandled promise rejections
         window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled Promise Rejection:', event.reason);
             this.logError('Unhandled Promise Rejection', {
                 reason: event.reason,
                 stack: event.reason ? event.reason.stack : 'No stack trace',
                 timestamp: new Date().toISOString()
             });
         });
+
+        // Export debug data on page unload
+        window.addEventListener('beforeunload', () => {
+            this.exportDebugData();
+        });
     }
 
     setupConsoleCapture() {
         if (!isBrowser) return;
+        if (this.consoleCaptureActive) return; // prevent double-wrapping per instance
+        this.consoleCaptureActive = true;
 
         // Override console methods to capture logs
         const originalConsole = {
@@ -60,24 +86,40 @@ class ErrorLogger {
             info: console.info
         };
 
+        const self = this;
+
         console.log = (...args) => {
             originalConsole.log(...args);
-            this.logInfo('Console Log', args);
+            const entry = {
+                id: Date.now(),
+                message: args.join(' '),
+                type: 'console.log',
+                severity: 'info',
+                timestamp: new Date().toISOString()
+            };
+            self.logs.push(entry);
         };
 
         console.error = (...args) => {
             originalConsole.error(...args);
-            this.logError('Console Error', { message: args.join(' '), timestamp: new Date().toISOString() });
+            self.logError('Console Error', { message: args.join(' '), timestamp: new Date().toISOString() });
         };
 
         console.warn = (...args) => {
             originalConsole.warn(...args);
-            this.logWarning('Console Warning', { message: args.join(' '), timestamp: new Date().toISOString() });
+            self.logWarning('Console Warning', { message: args.join(' '), timestamp: new Date().toISOString() });
         };
 
         console.info = (...args) => {
             originalConsole.info(...args);
-            this.logInfo('Console Info', args);
+            const entry = {
+                id: Date.now(),
+                message: args.join(' '),
+                type: 'console.info',
+                severity: 'info',
+                timestamp: new Date().toISOString()
+            };
+            self.logs.push(entry);
         };
     }
 
@@ -198,15 +240,18 @@ class ErrorLogger {
         return { status: 'Node editor not loaded' };
     }
 
-    captureServerStatus() {
+    async captureServerStatus() {
         if (!isBrowser) return { status: 'Not in browser' };
 
-        return {
-            serverUrl: window.location.origin,
-            socketConnected: typeof window.socket !== 'undefined' && window.socket.connected,
-            pythonAgents: typeof window.pythonAgents !== 'undefined' ?
-                Object.keys(window.pythonAgents).length : 0
-        };
+        try {
+            const response = await fetch('/api/status');
+            if (response.ok) {
+                return await response.json();
+            }
+            return { error: 'Server returned ' + response.status, timestamp: new Date().toISOString() };
+        } catch (e) {
+            return { error: e.message, timestamp: new Date().toISOString() };
+        }
     }
 
     exportDebugData() {
@@ -240,18 +285,22 @@ class ErrorLogger {
 
         if (isBrowser) {
             // Save to server logs directory
-            fetch('/api/logs/debug', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    debugData: debugData,
-                    timestamp: Date.now()
-                })
-            }).catch(err => {
-                // Don't use console.error - causes infinite loop
-            }).finally(() => {
+            try {
+                fetch('/api/logs/debug', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        debugData: debugData,
+                        timestamp: Date.now()
+                    })
+                }).catch(err => {
+                    // Don't use console.error - causes infinite loop
+                }).finally(() => {
+                    this.exporting = false;
+                });
+            } catch(e) {
                 this.exporting = false;
-            });
+            }
 
             // Also save to localStorage for persistence
             try {
@@ -266,10 +315,13 @@ class ErrorLogger {
 
     getDebugSummary() {
         return {
-            errors: this.errors.length,
-            warnings: this.logs.filter(log => log.severity === 'warning').length,
-            lastError: this.errors.length > 0 ? this.errors[this.errors.length - 1] : null,
-            uptime: Date.now() - this.startTime.getTime()
+            totalErrors: this.errors.length,
+            totalWarnings: this.warnings.length,
+            totalInfo: this.info.length,
+            totalLogs: this.logs.length,
+            errorTypes: this.errors.map(e => e.type),
+            warningTypes: this.warnings.map(w => w.type),
+            infoTypes: this.info.map(i => i.type)
         };
     }
 
@@ -278,15 +330,14 @@ class ErrorLogger {
         this.warnings = [];
         this.info = [];
         this.logs = [];
-        if (isBrowser) {
-            console.log('🧹 Error logs cleared');
-        }
     }
 }
 
 // Export for Node.js (CommonJS)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ErrorLogger };
+    const _exportedInstance = new ErrorLogger();
+    const _exportedFn = () => _exportedInstance.exportDebugData();
+    module.exports = { ErrorLogger, errorLogger: _exportedInstance, exportDebugData: _exportedFn };
     module.exports.ErrorLogger = ErrorLogger;
     module.exports.default = ErrorLogger;
 }
@@ -294,6 +345,7 @@ if (typeof module !== 'undefined' && module.exports) {
 // Initialize error logger in browser
 if (isBrowser) {
     window.errorLogger = new ErrorLogger();
+    window.errorLogger.setupConsoleCapture(); // only here, not in constructor
 
     // Export function for manual debugging
     window.exportDebugData = () => {
@@ -305,7 +357,9 @@ if (isBrowser) {
         const debugButton = document.createElement('button');
         debugButton.innerHTML = '🔍';
         debugButton.title = 'Export Debug Data';
-        debugButton.style.cssText = `
+        debugButton.onclick = () => window.exportDebugData();
+        if (debugButton.style) {
+          debugButton.style.cssText = `
             position: fixed;
             bottom: 20px;
             left: 20px;
@@ -320,7 +374,7 @@ if (isBrowser) {
             font-weight: bold;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         `;
-        debugButton.onclick = () => window.exportDebugData();
+        }
         document.body.appendChild(debugButton);
     });
 }

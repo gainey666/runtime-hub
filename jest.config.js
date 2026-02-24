@@ -65,7 +65,10 @@ module.exports = {
   globalTeardown: '<rootDir>/tests/setup/global-teardown.js',
   
   // Setup and teardown for each test
-  setupFilesAfterEnv: ['<rootDir>/tests/setup/test-db.js'],
+  setupFilesAfterEnv: [
+    '<rootDir>/tests/setup/test-db.js',
+    '<rootDir>/tests/setup/jsdom-patches.js'
+  ],
   
   // Error handling
   errorOnDeprecated: true,

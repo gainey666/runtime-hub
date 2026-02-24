@@ -123,8 +123,8 @@ class WorkflowEngine extends EventEmitter {
             // Initialize workflow and reserve slot BEFORE any awaits
             workflow = {
                 id: workflowId,
-                nodes,
-                connections,
+                nodes: nodes || [],
+                connections: connections || [],
                 executionState: new Map(),
                 startTime: Date.now(),
                 status: 'running',
@@ -166,12 +166,12 @@ class WorkflowEngine extends EventEmitter {
                 console.log(`✅ Workflow ${workflowId} completed: (${workflow.duration}ms)`);
             }
             this.broadcastWorkflowUpdate(workflowId, 'completed', {
-    id: workflow.id,
-    status: workflow.status,
-    duration: workflow.duration,
-    completedNodes: workflow.completedNodes,
-    nodeCount: workflow.nodes ? workflow.nodes.length : 0
-});
+                id: workflow.id,
+                status: workflow.status,
+                duration: workflow.duration,
+                completedNodes: workflow.completedNodes,
+                nodeCount: workflow.nodes ? workflow.nodes.length : 0
+            });
             
             // Add to history for completed workflows
             this.addToHistory(workflow);
@@ -351,7 +351,7 @@ class WorkflowEngine extends EventEmitter {
         });
 
         const connectedNodes = outgoingConns
-            .map(conn => workflow.nodes.find(n => n.id === conn.to.nodeId))
+            .map(conn => workflow.nodes ? workflow.nodes.find(n => n.id === conn.to.nodeId) : null)
             .filter(Boolean);
 
         for (const connectedNode of connectedNodes) {
@@ -367,6 +367,9 @@ class WorkflowEngine extends EventEmitter {
         const inputs = {};
         if (!workflow.context) return inputs;
 
+        // Guard against undefined connections
+        if (!connections || !Array.isArray(connections)) return inputs;
+
         const incomingConns = connections.filter(c => c.to.nodeId === node.id);
         if (incomingConns.length === 0) return inputs;
 
@@ -380,7 +383,7 @@ class WorkflowEngine extends EventEmitter {
                 ? (portMap.inputs[conn.to.portIndex] || `input_${conn.to.portIndex}`)
                 : `input_${conn.to.portIndex}`;
 
-            const fromNode = workflow.nodes.find(n => n.id === conn.from.nodeId);
+            const fromNode = workflow.nodes ? workflow.nodes.find(n => n.id === conn.from.nodeId) : null;
             const fromPortMap = fromNode ? NODE_PORT_MAP[fromNode.type] : null;
             const outputPortName = fromPortMap
                 ? (fromPortMap.outputs[conn.from.portIndex] || null)
@@ -471,8 +474,10 @@ class WorkflowEngine extends EventEmitter {
     }
 
     getMetrics() {
-        return {
-            ...this.performanceMetrics,
+        const metrics = {
+            totalWorkflows: this.performanceMetrics.totalWorkflows,
+            successfulWorkflows: this.performanceMetrics.successfulWorkflows,
+            failedWorkflows: this.performanceMetrics.failedWorkflows,
             successRate: this.performanceMetrics.totalWorkflows > 0
                 ? (this.performanceMetrics.successfulWorkflows / this.performanceMetrics.totalWorkflows * 100).toFixed(2) + '%'
                 : '0%',
@@ -480,6 +485,8 @@ class WorkflowEngine extends EventEmitter {
             runningWorkflows: this.runningWorkflows.size,
             maxConcurrentWorkflows: this.config.workflow.maxConcurrentWorkflows
         };
+        console.log('DEBUG: getMetrics returning:', JSON.stringify(metrics, null, 2));
+        return metrics;
     }
 
     getHistory(limit = 50) {
